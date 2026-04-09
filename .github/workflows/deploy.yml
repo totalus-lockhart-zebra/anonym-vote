@@ -6,9 +6,11 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build
     runs-on: ubuntu-latest
 
     steps:
@@ -17,10 +19,10 @@ jobs:
 
       - name: Get Node.js version
         id: nvm
-        run: echo ::set-output name=NODE_VERSION::$(cat .nvmrc)
+        run: echo "NODE_VERSION=$(cat .nvmrc)" >> $GITHUB_OUTPUT
 
       - name: Setup Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ steps.nvm.outputs.NODE_VERSION }}
           registry-url: https://registry.npmjs.org/
@@ -40,7 +42,6 @@ jobs:
           path: ./dist
 
   deploy:
-    name: Deploy
     needs: build
     runs-on: ubuntu-latest
 
