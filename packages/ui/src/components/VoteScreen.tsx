@@ -5,7 +5,7 @@ import { fundRequestMessage } from '../crypto';
 import { ACTIVE_PROPOSAL } from '../config';
 import { getOrCreateStealth } from '../stealth';
 import type { Stealth } from '../stealth';
-import { requestCredential, isDevStub } from '../faucet';
+import { requestCredential } from '../faucet';
 import { sendRemark, waitForBalance } from '../subtensor';
 
 const CHOICES: { id: Choice; label: string; sub: string; color: string }[] = [
@@ -19,10 +19,7 @@ const CHOICES: { id: Choice; label: string; sub: string; color: string }[] = [
   },
 ];
 
-// Minimum stealth balance (planck) before we try to submit the remark.
-// TAO has 9 decimals; 10_000_000 planck = 0.01 TAO — enough headroom for a
-// single system.remark fee on Finney.
-const MIN_STEALTH_BALANCE = 10_000_000n;
+const MIN_STEALTH_BALANCE = 100_000n;
 
 function shortAddr(addr?: string | null) {
   if (!addr) return '';
@@ -78,7 +75,7 @@ export default function VoteScreen({ wallet, alreadyVoted, onVoted }) {
       const msg = fundRequestMessage(proposal.id, st.address);
       const realSig = await wallet.sign(msg);
 
-      // 3. Ask the faucet for a credential (and for funding, in real mode).
+      // 3. Ask the faucet for a credential.
       const cred = await requestCredential({
         proposalId: proposal.id,
         stealthAddress: st.address,
@@ -116,9 +113,9 @@ export default function VoteScreen({ wallet, alreadyVoted, onVoted }) {
         <div className="vs-already-icon">✓</div>
         <h3>Vote already on chain</h3>
         <p>
-          A vote from this browser's stealth wallet is already accepted into
-          the subtensor chain for proposal <strong>{proposal.id}</strong>.
-          Further attempts are dropped by the on-chain nullifier check.
+          A vote from this browser's stealth wallet is already accepted into the
+          subtensor chain for proposal <strong>{proposal.id}</strong>. Further
+          attempts are dropped by the on-chain nullifier check.
         </p>
       </div>
     );
@@ -165,9 +162,9 @@ export default function VoteScreen({ wallet, alreadyVoted, onVoted }) {
           <div className="vs-tlock-note">
             <span className="vs-tlock-icon">🕶</span>
             <span>
-              Your vote is published by a fresh stealth sr25519 wallet
-              generated in this browser. On-chain data never links back to
-              your real address.
+              Your vote is published by a fresh stealth sr25519 wallet generated
+              in this browser. On-chain data never links back to your real
+              address.
             </span>
           </div>
         </>
@@ -188,8 +185,13 @@ export default function VoteScreen({ wallet, alreadyVoted, onVoted }) {
           <div className="vs-tlock-explain">
             <div className="vs-tlock-explain-title">What happens next</div>
             <ol className="vs-steps">
-              <li>A fresh stealth sr25519 wallet is generated in your browser.</li>
-              <li>Your real wallet signs a fund request — without your choice in it.</li>
+              <li>
+                A fresh stealth sr25519 wallet is generated in your browser.
+              </li>
+              <li>
+                Your real wallet signs a fund request — without your choice in
+                it.
+              </li>
               <li>
                 The faucet funds the stealth address and returns a
                 coordinator-signed credential.
@@ -200,13 +202,6 @@ export default function VoteScreen({ wallet, alreadyVoted, onVoted }) {
               </li>
               <li>On-chain there is no link back to your real address.</li>
             </ol>
-            {isDevStub() && (
-              <div className="vs-warn" style={{ marginTop: '1rem' }}>
-                Dev stub mode: the local faucet does NOT fund the stealth
-                address. You must manually transfer a small amount of TAO to
-                it before the remark can go through.
-              </div>
-            )}
           </div>
           <div className="vs-review-actions">
             <button className="vs-btn-ghost" onClick={reset}>
@@ -238,13 +233,6 @@ export default function VoteScreen({ wallet, alreadyVoted, onVoted }) {
             <small>
               Stealth: <code>{shortAddr(stealth.address)}</code>
             </small>
-          )}
-          {isDevStub() && stealth && (
-            <div className="vs-warn" style={{ marginTop: '1rem' }}>
-              Dev stub mode: send a tiny bit of TAO to{' '}
-              <code style={{ wordBreak: 'break-all' }}>{stealth.address}</code>{' '}
-              manually to continue.
-            </div>
           )}
         </div>
       )}

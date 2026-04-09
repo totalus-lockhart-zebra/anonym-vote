@@ -1,0 +1,24 @@
+import { Body, Controller, Get, Post } from '@nestjs/common';
+import { FundRequestDto } from './dto/fund-request.dto';
+import { CredentialResponse, FaucetService } from './faucet.service';
+
+@Controller('faucet')
+export class FaucetController {
+  constructor(private readonly faucet: FaucetService) {}
+
+  /** Public key the UI uses to verify on-chain credentials. */
+  @Get('coord')
+  getCoord(): { address: string } {
+    return { address: this.faucet.getCoordAddress() };
+  }
+
+  /**
+   * Fund the stealth address (if needed) and return a coordinator-signed
+   * credential. The UI embeds this credential in the remark it publishes
+   * from the stealth wallet.
+   */
+  @Post('fund')
+  async fund(@Body() body: FundRequestDto): Promise<CredentialResponse> {
+    return this.faucet.issueCredential(body);
+  }
+}

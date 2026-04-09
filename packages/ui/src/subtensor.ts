@@ -6,7 +6,7 @@
  *   - getCurrentBlock()   latest head block number
  *   - scanRemarks(a, b)   all system.remark extrinsics in [a..b]
  *   - sendRemark(pair, t) submit a signed system.remark extrinsic
- *   - waitForBalance(a,m) poll until address has >= m planck free balance
+ *   - waitForBalance(a,m) poll until address has >= m rao free balance
  */
 
 import { ApiPromise, WsProvider } from '@polkadot/api';
@@ -95,8 +95,9 @@ export async function scanRemarks(
     }
   }
 
-  const workers = Array.from({ length: Math.min(CONCURRENCY, total || 1) }, () =>
-    worker(),
+  const workers = Array.from(
+    { length: Math.min(CONCURRENCY, total || 1) },
+    () => worker(),
   );
   await Promise.all(workers);
 
@@ -139,20 +140,23 @@ export async function sendRemark(
 }
 
 /**
- * Poll until `address` has at least `minPlanck` free balance, or `timeoutMs`
+ * Poll until `address` has at least `minRao` free balance, or `timeoutMs`
  * elapses. Uses the system.account storage query.
  */
 export async function waitForBalance(
   address: string,
-  minPlanck: bigint,
-  { timeoutMs = 180_000, intervalMs = 3_000 }: { timeoutMs?: number; intervalMs?: number } = {},
+  minRao: bigint,
+  {
+    timeoutMs = 180_000,
+    intervalMs = 3_000,
+  }: { timeoutMs?: number; intervalMs?: number } = {},
 ): Promise<bigint> {
   const api = await getApi();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const acc = (await api.query.system.account(address)) as any;
     const free = BigInt(acc.data.free.toString());
-    if (free >= minPlanck) return free;
+    if (free >= minRao) return free;
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   throw new Error(
