@@ -33,7 +33,7 @@ jobs:
       - name: Build project
         run: npm run build
         env:
-          VITE_TOKEN: ${{ secrets.TOKEN }}
+          VITE_PARTS_JSON: ${{ secrets.VITE_PARTS_JSON }}
 
       - name: Upload production-ready build files
         uses: actions/upload-artifact@v4

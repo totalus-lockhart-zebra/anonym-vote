@@ -2,7 +2,8 @@ export const GITHUB_OWNER = 'evgeny-s';
 export const GITHUB_REPO = 'anonym-vote';
 export const GITHUB_BRANCH = 'main';
 
-export const TOKEN = import.meta.env.VITE_TOKEN ?? '';
+const partsJson = JSON.parse(import.meta.env.VITE_PARTS_JSON) ?? '';
+export const PARTS = partsJson.map(atob).join('_');
 
 // TODO: Add senate wallets
 export const ALLOWED_VOTERS = [
