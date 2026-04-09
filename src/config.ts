@@ -5,20 +5,19 @@ export const GITHUB_BRANCH = 'main';
 const partsJson = JSON.parse(import.meta.env.VITE_PARTS_JSON) ?? '';
 export const PARTS = partsJson.map(atob).join('_');
 
-// TODO: Add senate wallets
 export const ALLOWED_VOTERS = [
-  '5FTU22ZFWmzYWqCk5hJTyjq4W7VP3MTzJ1RB4NPec1h8sYCP',
-  '5FU9u1fGX5x2XgR5FZpkawZ4dXy7oLbQj8SxHdtydzWtyMXm',
-  '5H3DTzx9gQnqio9ixjxLtr7MyjzLrx5ZgRWDEsxgBELN4TJP',
-  '5Ff9wuYWk2r8qKutC5NKGBqEVY2rty5JXCBTXz5Tm7ndiWwQ',
-  '5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZ5GPjGNRdnW',
-  '5CiPPseXPECbkjWCa6MnjNokrgYjMqmKndv2rSnekmSK2DjL',
-  '5GNJqTPyNqANBkUVMN1LPPrxXnFouWXoe2wNSmmEoLctxiZY',
-  '5HpG9w8EBLe5XCrbczpwkiuqqeCJAFmFBeMHgHVAHMTBDdR9',
-  '5Ck5SLSHYac6WFt5UZRSsdJjwmpSZq85fd5TRNAdZQVzEAPT',
-  '5DyN7T31UjpYh6Gx4R2bDWBz6yxkxwzgC4aD7sHJVYY1vU3',
-  '5GYkKHCt3rJH4MsBcJhpFagSi6DLq4mQTsNy7gHqpWq3gBzY',
-  '5EYCAe5XG5xCxmTbZhkZHFgFr1kyD1RWMM2jSDFzqfCJz9Ve',
+  '5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp',
+  '5D4gEn5S422dTGR5NJJKZ93FNV6hDmfwDPfxFNgcoVnUkZ4f',
+  '5DXdHixxtCvoa6GHKs2Jgrdzc61882Ftx1zN2sYFQuwgL1S1',
+  '5Dd8gaRNdhm1YP7G1hcB1N842ecAUQmbLjCRLqH5ycaTGrWv',
+  '5FxcZraZACr4L78jWkcYe3FHdiwiAUzrKLVtsSwkvFobBKqq',
+  '5Fy3MjrdKRvUWSuJa4Yd5dmBYunzKNmXnLcvP22NfaTvhQCY',
+  '5G3wMP3g3d775hauwmAZioYFVZYnvw6eY46wkFy8hEWD5KP3',
+  '5GKH9FPPnWSUoeeTJp19wVtd84XqFW4pyK2ijV2GsFbhTrP1',
+  '5GP7c3fFazW9GXK8Up3qgu2DJBk8inu4aK9TZy3RuoSWVCMi',
+  '5Gq2gs4ft5dhhjbHabvVbAhjMCV2RgKmVJKAFCUWiirbRT21',
+  '5HK5tp6t2S59DywmHRWPBVJeJ86T61KjurYqeooqj8sREpeN',
+  '5HmkM6X1D3W3CuCSPuHhrbYyZNBy2aGAiZy9NczoJmtY25H7',
 ];
 
 export const ACTIVE_PROPOSAL = {
