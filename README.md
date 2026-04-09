@@ -14,3 +14,5 @@ Run app:
 nvm exec npm i
 nvm exec npm run dev
 ```
+
+Live Demo: https://evgeny-s.github.io/anonym-vote/
