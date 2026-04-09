@@ -5,19 +5,14 @@
  * Each file has: address, nullifier, ciphertext (tlock-encrypted choice).
  */
 
-import {
-  GITHUB_OWNER,
-  GITHUB_REPO,
-  GITHUB_BRANCH,
-  GITHUB_TOKEN,
-} from './config.js';
+import { GITHUB_OWNER, GITHUB_REPO, GITHUB_BRANCH, TOKEN } from './config.js';
 
 const BASE = 'https://api.github.com';
 
 function headers() {
   return {
     Accept: 'application/vnd.github+json',
-    Authorization: `Bearer ${GITHUB_TOKEN}`,
+    Authorization: `Bearer ${TOKEN}`,
     'X-GitHub-Api-Version': '2022-11-28',
     'Content-Type': 'application/json',
   };
