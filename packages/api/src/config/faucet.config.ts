@@ -7,6 +7,15 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
  * are fatal — we'd rather crash at boot than sign credentials against a
  * misconfigured coordinator key.
  */
+export interface ProposalConfig {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly deadline: string;
+  readonly quorum: number;
+  readonly startBlock: number;
+}
+
 @Injectable()
 export class FaucetConfig implements OnModuleInit {
   private readonly logger = new Logger(FaucetConfig.name);
@@ -15,11 +24,15 @@ export class FaucetConfig implements OnModuleInit {
   readonly coordMnemonic: string;
   readonly coordHmacSecret: string;
   readonly allowedVoters: readonly string[];
-  readonly proposalId: string;
+  readonly proposal: ProposalConfig;
   readonly fundAmountRao: bigint;
   readonly minStealthBalanceRao: bigint;
   readonly port: number;
   readonly corsOrigins: string[];
+
+  get proposalId(): string {
+    return this.proposal.id;
+  }
 
   constructor() {
     this.subtensorWs =
@@ -28,7 +41,29 @@ export class FaucetConfig implements OnModuleInit {
     this.coordMnemonic = required('COORD_MNEMONIC');
     this.coordHmacSecret = required('COORD_HMAC_SECRET');
 
-    this.proposalId = required('PROPOSAL_ID');
+    const deadline = required('PROPOSAL_DEADLINE');
+    if (Number.isNaN(Date.parse(deadline))) {
+      throw new Error(
+        `PROPOSAL_DEADLINE must be a valid ISO date string, got "${deadline}"`,
+      );
+    }
+    const quorum = Number(required('PROPOSAL_QUORUM'));
+    if (!Number.isInteger(quorum) || quorum < 0) {
+      throw new Error('PROPOSAL_QUORUM must be a non-negative integer');
+    }
+    const startBlock = Number(required('PROPOSAL_START_BLOCK'));
+    if (!Number.isInteger(startBlock) || startBlock < 0) {
+      throw new Error('PROPOSAL_START_BLOCK must be a non-negative integer');
+    }
+
+    this.proposal = {
+      id: required('PROPOSAL_ID'),
+      title: required('PROPOSAL_TITLE'),
+      description: required('PROPOSAL_DESCRIPTION'),
+      deadline,
+      quorum,
+      startBlock,
+    };
 
     // Comma-separated SS58 addresses. Must match the list shown in the UI.
     const votersEnv = required('ALLOWED_VOTERS');
@@ -55,7 +90,10 @@ export class FaucetConfig implements OnModuleInit {
 
   onModuleInit() {
     this.logger.log(`Subtensor WS:        ${this.subtensorWs}`);
-    this.logger.log(`Proposal id:         ${this.proposalId}`);
+    this.logger.log(`Proposal id:         ${this.proposal.id}`);
+    this.logger.log(`Proposal deadline:   ${this.proposal.deadline}`);
+    this.logger.log(`Proposal quorum:     ${this.proposal.quorum}`);
+    this.logger.log(`Proposal startBlock: ${this.proposal.startBlock}`);
     this.logger.log(`Allowed voters:      ${this.allowedVoters.length}`);
     this.logger.log(`Fund amount:         ${this.fundAmountRao} rao`);
     this.logger.log(`Min stealth balance: ${this.minStealthBalanceRao} rao`);

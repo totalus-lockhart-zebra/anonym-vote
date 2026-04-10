@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useWallet } from './hooks/useWallet';
 import { useVotes } from './hooks/useVotes';
 import { useVoters } from './hooks/useVoters';
+import { useProposal } from './hooks/useProposal';
 import VoteScreen from './components/VoteScreen';
 import ResultsScreen from './components/ResultsScreen';
 import ParticipantsScreen from './components/ParticipantsScreen';
-import { ACTIVE_PROPOSAL } from './config';
 
 const TABS = [
   { id: 'vote', label: 'Vote' },
@@ -21,6 +21,11 @@ function shortAddr(addr) {
 export default function App() {
   const [tab, setTab] = useState('vote');
   const { voters, loading: votersLoading, error: votersError } = useVoters();
+  const {
+    proposal,
+    loading: proposalLoading,
+    error: proposalError,
+  } = useProposal();
   const wallet = useWallet(voters);
   const {
     tally,
@@ -30,7 +35,7 @@ export default function App() {
     alreadyVoted,
     isPastDeadline,
     refresh,
-  } = useVotes(wallet.address);
+  } = useVotes(wallet.address, proposal);
 
   return (
     <div className="app">
@@ -40,7 +45,7 @@ export default function App() {
             <span className="logo-mark">◈</span>
             <span className="logo-text">AnonVote</span>
           </div>
-          <span className="proposal-chip">{ACTIVE_PROPOSAL.id}</span>
+          <span className="proposal-chip">{proposal?.id ?? '…'}</span>
           {isPastDeadline && (
             <span
               className="proposal-chip"
@@ -96,6 +101,11 @@ export default function App() {
           Failed to load voter list from faucet: {votersError}
         </div>
       )}
+      {proposalError && (
+        <div className="wallet-error">
+          Failed to load proposal from faucet: {proposalError}
+        </div>
+      )}
 
       <nav className="tabs">
         {TABS.map((t) => (
@@ -116,30 +126,41 @@ export default function App() {
       </nav>
 
       <main className="content">
-        {tab === 'vote' && (
-          <VoteScreen
-            wallet={wallet}
-            alreadyVoted={alreadyVoted}
-            onVoted={refresh}
-          />
-        )}
-        {tab === 'results' && (
-          <ResultsScreen
-            tally={tally}
-            loading={loading}
-            error={error}
-            progress={progress}
-            refresh={refresh}
-            isPastDeadline={isPastDeadline}
-            voters={voters}
-          />
-        )}
-        {tab === 'participants' && (
-          <ParticipantsScreen
-            voters={voters}
-            totalVoted={tally?.totalVoted ?? 0}
-            loading={loading || votersLoading}
-          />
+        {proposalLoading || !proposal ? (
+          <div className="vs-status">
+            <div className="vs-spinner" />
+            <p>Loading proposal…</p>
+          </div>
+        ) : (
+          <>
+            {tab === 'vote' && (
+              <VoteScreen
+                wallet={wallet}
+                alreadyVoted={alreadyVoted}
+                onVoted={refresh}
+                proposal={proposal}
+              />
+            )}
+            {tab === 'results' && (
+              <ResultsScreen
+                tally={tally}
+                loading={loading}
+                error={error}
+                progress={progress}
+                refresh={refresh}
+                isPastDeadline={isPastDeadline}
+                voters={voters}
+                proposal={proposal}
+              />
+            )}
+            {tab === 'participants' && (
+              <ParticipantsScreen
+                voters={voters}
+                totalVoted={tally?.totalVoted ?? 0}
+                loading={loading || votersLoading}
+              />
+            )}
+          </>
         )}
       </main>
     </div>

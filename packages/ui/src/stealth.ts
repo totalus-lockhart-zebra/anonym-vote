@@ -13,7 +13,6 @@
 import { Keyring } from '@polkadot/keyring';
 import type { KeyringPair } from '@polkadot/keyring/types';
 import { cryptoWaitReady, mnemonicGenerate } from '@polkadot/util-crypto';
-import { ACTIVE_PROPOSAL } from './config';
 
 let cryptoReady = false;
 export async function ensureCryptoReady(): Promise<void> {
@@ -27,8 +26,8 @@ export interface Stealth {
   pair: KeyringPair;
 }
 
-function storageKey(realAddress: string): string {
-  return `stealth:${ACTIVE_PROPOSAL.id}:${realAddress}`;
+function storageKey(proposalId: string, realAddress: string): string {
+  return `stealth:${proposalId}:${realAddress}`;
 }
 
 /**
@@ -36,10 +35,11 @@ function storageKey(realAddress: string): string {
  * Idempotent within a single tab session.
  */
 export async function getOrCreateStealth(
+  proposalId: string,
   realAddress: string,
 ): Promise<Stealth> {
   await ensureCryptoReady();
-  const key = storageKey(realAddress);
+  const key = storageKey(proposalId, realAddress);
   let mnemonic = sessionStorage.getItem(key);
   if (!mnemonic) {
     mnemonic = mnemonicGenerate();
@@ -55,10 +55,11 @@ export async function getOrCreateStealth(
  * the current session hasn't generated one yet.
  */
 export async function peekStealth(
+  proposalId: string,
   realAddress: string,
 ): Promise<Stealth | null> {
   await ensureCryptoReady();
-  const mnemonic = sessionStorage.getItem(storageKey(realAddress));
+  const mnemonic = sessionStorage.getItem(storageKey(proposalId, realAddress));
   if (!mnemonic) return null;
   const keyring = new Keyring({ type: 'sr25519' });
   const pair = keyring.addFromUri(mnemonic);

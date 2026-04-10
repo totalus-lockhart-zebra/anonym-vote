@@ -278,8 +278,10 @@ last fund call, every browser would still arrive at the same tally.
 
 The coordinator public key needed for verification is fetched once from
 `GET /faucet/coord`. The eligible voter list shown in the UI is fetched
-from `GET /faucet/voters`. Neither endpoint takes input; both are pure
-reads of static configuration.
+from `GET /faucet/voters`, and the active proposal definition (id, title,
+description, deadline, quorum, startBlock) from `GET /faucet/proposal`.
+None of these endpoints takes input; all are pure reads of static
+configuration.
 
 ---
 
@@ -296,13 +298,19 @@ including:
   transfers and is the public verification key for credentials.
 - `COORD_HMAC_SECRET` — the PRF key for nullifier derivation. Must be
   long, random, and stable for the lifetime of a proposal.
-- `PROPOSAL_ID` — id of the active proposal.
+- `PROPOSAL_ID` / `PROPOSAL_TITLE` / `PROPOSAL_DESCRIPTION` — proposal
+  identity and copy shown in the UI.
+- `PROPOSAL_DEADLINE` — ISO timestamp after which voting is considered
+  closed.
+- `PROPOSAL_QUORUM` — minimum number of valid votes required for the
+  result to count.
+- `PROPOSAL_START_BLOCK` — first block to scan when tallying remarks.
 - `ALLOWED_VOTERS` — comma-separated SS58 addresses on the allowlist.
 - `FUND_AMOUNT_RAO` / `MIN_STEALTH_BALANCE_RAO` — funding policy.
 
 The UI takes only `VITE_FAUCET_URL` (default `http://localhost:3000`) and
-`VITE_SUBTENSOR_WS`. Everything else — the voter list, the coordinator
-public key — is fetched at runtime from the faucet.
+`VITE_SUBTENSOR_WS`. Everything else — the active proposal, the voter
+list, the coordinator public key — is fetched at runtime from the faucet.
 
 ---
 
