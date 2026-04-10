@@ -1,5 +1,5 @@
-import { ACTIVE_PROPOSAL } from '../config';
 import type { Tally } from '../crypto';
+import type { Proposal } from '../faucet';
 
 function Bar({
   label,
@@ -36,6 +36,7 @@ interface Props {
   refresh: () => void;
   isPastDeadline: boolean;
   voters: string[];
+  proposal: Proposal;
 }
 
 export default function ResultsScreen({
@@ -46,6 +47,7 @@ export default function ResultsScreen({
   refresh,
   isPastDeadline,
   voters,
+  proposal,
 }: Props) {
   if (loading) {
     const pct =
@@ -84,7 +86,7 @@ export default function ResultsScreen({
     totalVoted: 0,
   };
   const counted = t.yes + t.no + t.abstain;
-  const quorum = ACTIVE_PROPOSAL.quorum;
+  const quorum = proposal.quorum;
   const quorumMet = t.totalVoted >= quorum;
 
   let outcome = 'Pending';

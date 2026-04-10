@@ -2,11 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { getCurrentBlock, scanRemarks } from '../subtensor';
 import { tallyRemarks } from '../crypto';
 import type { AcceptedVote, Tally } from '../crypto';
-import { ACTIVE_PROPOSAL } from '../config';
+import type { Proposal } from '../faucet';
 import { getCoordPubkey } from '../faucet';
 import { peekStealth } from '../stealth';
 
-export function useVotes(realAddress: string | null) {
+export function useVotes(
+  realAddress: string | null,
+  proposal: Proposal | null,
+) {
   const [votes, setVotes] = useState<AcceptedVote[]>([]);
   const [tally, setTally] = useState<Tally | null>(null);
   const [loading, setLoading] = useState(true);
@@ -14,10 +17,14 @@ export function useVotes(realAddress: string | null) {
   const [progress, setProgress] = useState({ scanned: 0, total: 0 });
   const [alreadyVoted, setAlreadyVoted] = useState(false);
 
-  const proposalId = ACTIVE_PROPOSAL.id;
-  const startBlock = ACTIVE_PROPOSAL.startBlock;
+  const proposalId = proposal?.id ?? null;
+  const startBlock = proposal?.startBlock ?? null;
 
   const refresh = useCallback(async () => {
+    if (!proposalId || startBlock == null) {
+      // Wait until the proposal has been fetched from the faucet.
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -38,7 +45,7 @@ export function useVotes(realAddress: string | null) {
 
       if (realAddress) {
         try {
-          const stealth = await peekStealth(realAddress);
+          const stealth = await peekStealth(proposalId, realAddress);
           setAlreadyVoted(
             stealth ? v.some((vote) => vote.s === stealth.address) : false,
           );
@@ -59,8 +66,9 @@ export function useVotes(realAddress: string | null) {
     refresh();
   }, [refresh]);
 
-  const deadline = new Date(ACTIVE_PROPOSAL.deadline);
-  const isPastDeadline = Date.now() > deadline.getTime();
+  const isPastDeadline = proposal
+    ? Date.now() > new Date(proposal.deadline).getTime()
+    : false;
 
   return {
     votes,

@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
+import type { ProposalConfig } from '../config/faucet.config';
 import { FundRequestDto } from './dto/fund-request.dto';
 import { CredentialResponse, FaucetService } from './faucet.service';
 
@@ -16,6 +17,12 @@ export class FaucetController {
   @Get('voters')
   getVoters(): { voters: string[] } {
     return { voters: this.faucet.getAllowedVoters() };
+  }
+
+  /** Active proposal definition (id, title, description, deadline, quorum, startBlock). */
+  @Get('proposal')
+  getProposal(): ProposalConfig {
+    return this.faucet.getProposal();
   }
 
   /**

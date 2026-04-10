@@ -16,6 +16,15 @@ export interface Credential {
   credSig: string;
 }
 
+export interface Proposal {
+  id: string;
+  title: string;
+  description: string;
+  deadline: string;
+  quorum: number;
+  startBlock: number;
+}
+
 function faucetUrl(path: string): string {
   if (!FAUCET_URL) {
     throw new Error(
@@ -46,6 +55,36 @@ export function getCoordPubkey(): Promise<string> {
     });
   }
   return coordPubkeyPromise;
+}
+
+let proposalPromise: Promise<Proposal> | null = null;
+
+export function getProposal(): Promise<Proposal> {
+  if (!proposalPromise) {
+    proposalPromise = (async () => {
+      const res = await fetch(faucetUrl('/faucet/proposal'));
+      if (!res.ok) {
+        throw new Error(
+          `Faucet /proposal error ${res.status}: ${res.statusText}`,
+        );
+      }
+      const body = (await res.json()) as Partial<Proposal>;
+      if (
+        !body?.id ||
+        !body?.title ||
+        !body?.deadline ||
+        typeof body?.quorum !== 'number' ||
+        typeof body?.startBlock !== 'number'
+      ) {
+        throw new Error('Faucet /proposal returned a malformed proposal');
+      }
+      return body as Proposal;
+    })().catch((err) => {
+      proposalPromise = null;
+      throw err;
+    });
+  }
+  return proposalPromise;
 }
 
 let votersPromise: Promise<string[]> | null = null;

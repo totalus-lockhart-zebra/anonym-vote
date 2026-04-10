@@ -11,7 +11,7 @@ import {
   encodeAddress,
   cryptoWaitReady,
 } from '@polkadot/util-crypto';
-import { FaucetConfig } from '../config/faucet.config';
+import { FaucetConfig, ProposalConfig } from '../config/faucet.config';
 import {
   computeNullifier,
   credentialMessage,
@@ -136,6 +136,10 @@ export class FaucetService {
 
   getAllowedVoters(): string[] {
     return [...this.config.allowedVoters];
+  }
+
+  getProposal(): ProposalConfig {
+    return this.config.proposal;
   }
 
   private mustDecodeAddress(addr: string, field: string): Uint8Array {

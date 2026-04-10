@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { encodeRemark } from '../crypto';
 import type { Choice } from '../crypto';
 import { fundRequestMessage } from '../crypto';
-import { ACTIVE_PROPOSAL } from '../config';
 import { getOrCreateStealth } from '../stealth';
 import type { Stealth } from '../stealth';
 import { requestCredential } from '../faucet';
+import type { Proposal } from '../faucet';
 import { sendRemark, waitForBalance } from '../subtensor';
 
 const CHOICES: { id: Choice; label: string; sub: string; color: string }[] = [
@@ -35,14 +35,23 @@ type Phase =
   | 'done'
   | 'error';
 
-export default function VoteScreen({ wallet, alreadyVoted, onVoted }) {
+export default function VoteScreen({
+  wallet,
+  alreadyVoted,
+  onVoted,
+  proposal,
+}: {
+  wallet: any;
+  alreadyVoted: boolean;
+  onVoted?: () => void;
+  proposal: Proposal;
+}) {
   const [phase, setPhase] = useState<Phase>('pick');
   const [selected, setSelected] = useState<Choice | null>(null);
   const [errMsg, setErrMsg] = useState('');
   const [stealth, setStealth] = useState<Stealth | null>(null);
   const [blockHash, setBlockHash] = useState<string | null>(null);
 
-  const proposal = ACTIVE_PROPOSAL;
   const deadline = new Date(proposal.deadline);
   const daysLeft = Math.max(
     0,
@@ -68,7 +77,7 @@ export default function VoteScreen({ wallet, alreadyVoted, onVoted }) {
     setPhase('signing');
     try {
       // 1. Generate (or reuse) the session stealth wallet for this voter.
-      const st = await getOrCreateStealth(wallet.address);
+      const st = await getOrCreateStealth(proposal.id, wallet.address);
       setStealth(st);
 
       // 2. Real wallet signs the fund-request message. Does NOT reveal choice.
