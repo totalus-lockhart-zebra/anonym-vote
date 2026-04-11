@@ -26,6 +26,9 @@ import {
   computeRingAt,
   encodeAnnounceRemark,
   parseAnnounceRemark,
+  encodeStartRemark,
+  parseStartRemark,
+  findVotingStartBlock,
   encodeVoteRemark,
   parseVoteRemark,
   voteMessageHex,
@@ -38,6 +41,7 @@ import {
 } from '@anon-vote/shared';
 
 const PROPOSAL = 'proposal-test-1';
+const COORDINATOR = '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY';
 
 // Bridge nodeRingSig (typed as `any` because the .d.ts says JsValue) into
 // the typed surface @anon-vote/shared expects. Wrapping it once at the test
@@ -205,6 +209,97 @@ describe('voteMessageHex / dripMessageHex', () => {
 });
 
 // ---------------------------------------------------------------------------
+// start remark
+// ---------------------------------------------------------------------------
+
+describe('start remark', () => {
+  it('encodes and parses round-trip', () => {
+    const text = encodeStartRemark(PROPOSAL);
+    expect(text).toBe(`anon-vote-v2:start:${PROPOSAL}`);
+    expect(parseStartRemark(text)).toEqual({ proposalId: PROPOSAL });
+  });
+
+  it('rejects proposalId with colon', () => {
+    expect(() => encodeStartRemark('bad:id')).toThrow();
+  });
+
+  it('returns null for unrelated remark text', () => {
+    expect(parseStartRemark('hello')).toBeNull();
+    expect(parseStartRemark('')).toBeNull();
+    expect(parseStartRemark('anon-vote-v2:announce:foo:bar')).toBeNull();
+    expect(parseStartRemark('anon-vote-v2:start:')).toBeNull();
+    expect(parseStartRemark('anon-vote-v2:start:has:colon')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findVotingStartBlock
+// ---------------------------------------------------------------------------
+
+describe('findVotingStartBlock', () => {
+  const startText = encodeStartRemark(PROPOSAL);
+
+  it('returns null when no start remark exists', () => {
+    expect(
+      findVotingStartBlock([], {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+      }),
+    ).toBeNull();
+  });
+
+  it('finds the start remark from the configured coordinator', () => {
+    const remarks: RemarkLike[] = [
+      { blockNumber: 100, signer: COORDINATOR, text: startText },
+    ];
+    expect(
+      findVotingStartBlock(remarks, {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+      }),
+    ).toBe(100);
+  });
+
+  it('ignores start remarks signed by anyone other than the coordinator', () => {
+    const remarks: RemarkLike[] = [
+      { blockNumber: 100, signer: '5Imposter', text: startText },
+    ];
+    expect(
+      findVotingStartBlock(remarks, {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+      }),
+    ).toBeNull();
+  });
+
+  it('ignores start remarks for other proposals', () => {
+    const remarks: RemarkLike[] = [
+      { blockNumber: 100, signer: COORDINATOR, text: encodeStartRemark('other') },
+    ];
+    expect(
+      findVotingStartBlock(remarks, {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+      }),
+    ).toBeNull();
+  });
+
+  it('takes the earliest start remark when multiple exist', () => {
+    const remarks: RemarkLike[] = [
+      { blockNumber: 200, signer: COORDINATOR, text: startText },
+      { blockNumber: 100, signer: COORDINATOR, text: startText },
+      { blockNumber: 300, signer: COORDINATOR, text: startText },
+    ];
+    expect(
+      findVotingStartBlock(remarks, {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+      }),
+    ).toBe(100);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // reconstructRing
 // ---------------------------------------------------------------------------
 
@@ -340,12 +435,14 @@ describe('computeRingAt', () => {
 describe('tallyRemarks (stub verify)', () => {
   // For the stub-verifier tests we don't care about real ring sigs;
   // we just need at least 2 announces in scope so the ring meets
-  // the minimum-2 constraint that tallyRemarks enforces.
+  // the minimum-2 constraint, AND a coordinator start remark so
+  // the tally accepts post-start votes at all.
   const alice = 'aa'.repeat(32);
   const bob = 'bb'.repeat(32);
-  const minimalAnnounces: RemarkLike[] = [
+  const minimalSetup: RemarkLike[] = [
     { blockNumber: 1, signer: '5Alice', text: encodeAnnounceRemark(PROPOSAL, alice) },
     { blockNumber: 2, signer: '5Bob', text: encodeAnnounceRemark(PROPOSAL, bob) },
+    { blockNumber: 5, signer: COORDINATOR, text: encodeStartRemark(PROPOSAL) },
   ];
 
   function fakeSig(keyImage: string): RingSignature {
@@ -380,13 +477,13 @@ describe('tallyRemarks (stub verify)', () => {
   it('counts unique key images per choice', () => {
     const { tally } = tallyRemarks(
       [
-        ...minimalAnnounces,
+        ...minimalSetup,
         makeVote(10, 'yes', 'aa'.repeat(32)),
         makeVote(11, 'no', 'bb'.repeat(32)),
         makeVote(12, 'yes', 'cc'.repeat(32)),
         makeVote(13, 'abstain', 'dd'.repeat(32)),
       ],
-      { proposalId: PROPOSAL, verify: acceptAll },
+      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
     );
     expect(tally).toEqual({ yes: 2, no: 1, abstain: 1, invalid: 0, totalVoted: 4 });
   });
@@ -394,8 +491,8 @@ describe('tallyRemarks (stub verify)', () => {
   it('drops second remark with same key image (first wins)', () => {
     const dup = 'ee'.repeat(32);
     const { tally, votes } = tallyRemarks(
-      [...minimalAnnounces, makeVote(10, 'yes', dup), makeVote(11, 'no', dup)],
-      { proposalId: PROPOSAL, verify: acceptAll },
+      [...minimalSetup, makeVote(10, 'yes', dup), makeVote(11, 'no', dup)],
+      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
     );
     expect(tally.yes).toBe(1);
     expect(tally.no).toBe(0);
@@ -406,8 +503,8 @@ describe('tallyRemarks (stub verify)', () => {
 
   it('counts invalid signatures separately, not in totalVoted', () => {
     const { tally } = tallyRemarks(
-      [...minimalAnnounces, makeVote(10, 'yes', 'aa'.repeat(32))],
-      { proposalId: PROPOSAL, verify: rejectAll },
+      [...minimalSetup, makeVote(10, 'yes', 'aa'.repeat(32))],
+      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: rejectAll },
     );
     expect(tally.invalid).toBe(1);
     expect(tally.totalVoted).toBe(0);
@@ -416,8 +513,8 @@ describe('tallyRemarks (stub verify)', () => {
   it('marks votes with empty ring (size < 2) as invalid', () => {
     // ringBlock=0 → no announces seen → ring size 0 → invalid.
     const { tally } = tallyRemarks(
-      [...minimalAnnounces, makeVote(10, 'yes', 'aa'.repeat(32), 0)],
-      { proposalId: PROPOSAL, verify: acceptAll },
+      [...minimalSetup, makeVote(10, 'yes', 'aa'.repeat(32), 0)],
+      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
     );
     expect(tally.invalid).toBe(1);
     expect(tally.totalVoted).toBe(0);
@@ -431,8 +528,8 @@ describe('tallyRemarks (stub verify)', () => {
       sig: fakeSig('aa'.repeat(32)),
     });
     const { tally } = tallyRemarks(
-      [...minimalAnnounces, { blockNumber: 10, signer: '5x', text: otherText }],
-      { proposalId: PROPOSAL, verify: acceptAll },
+      [...minimalSetup, { blockNumber: 10, signer: '5x', text: otherText }],
+      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
     );
     expect(tally.totalVoted).toBe(0);
     expect(tally.invalid).toBe(0);
@@ -443,10 +540,53 @@ describe('tallyRemarks (stub verify)', () => {
       throw new Error('bad bytes');
     };
     const { tally } = tallyRemarks(
-      [...minimalAnnounces, makeVote(10, 'yes', 'aa'.repeat(32))],
-      { proposalId: PROPOSAL, verify: throwing },
+      [...minimalSetup, makeVote(10, 'yes', 'aa'.repeat(32))],
+      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: throwing },
     );
     expect(tally.invalid).toBe(1);
+  });
+
+  it('accepts votes at the same block as the start remark', () => {
+    // Boundary: start is at block 5, a vote at block 5 is allowed.
+    // The chain author included both extrinsics in the same block,
+    // so temporal ordering within a block is irrelevant — the vote
+    // is "post-start" by chain consensus.
+    const { tally } = tallyRemarks(
+      [...minimalSetup, makeVote(5, 'yes', 'aa'.repeat(32))],
+      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
+    );
+    expect(tally.invalid).toBe(0);
+    expect(tally.totalVoted).toBe(1);
+    expect(tally.yes).toBe(1);
+  });
+
+  it('rejects votes in blocks strictly before the start remark', () => {
+    // Vote at block 3 < start at block 5 → invalid.
+    const { tally, invalidReasons } = tallyRemarks(
+      [...minimalSetup, makeVote(3, 'yes', 'aa'.repeat(32))],
+      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
+    );
+    expect(tally.invalid).toBe(1);
+    expect(tally.totalVoted).toBe(0);
+    expect(invalidReasons).toHaveLength(1);
+    expect(invalidReasons[0].reason).toBe('pre-start-vote');
+  });
+
+  it('rejects all votes as invalid when the start remark is missing entirely', () => {
+    // Same setup but without the coordinator's start remark.
+    const noStartSetup: RemarkLike[] = [
+      { blockNumber: 1, signer: '5Alice', text: encodeAnnounceRemark(PROPOSAL, alice) },
+      { blockNumber: 2, signer: '5Bob', text: encodeAnnounceRemark(PROPOSAL, bob) },
+    ];
+    const { tally, votingStartBlock, invalidReasons } = tallyRemarks(
+      [...noStartSetup, makeVote(10, 'yes', 'aa'.repeat(32))],
+      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
+    );
+    expect(votingStartBlock).toBeNull();
+    expect(tally.invalid).toBe(1);
+    expect(tally.totalVoted).toBe(0);
+    expect(invalidReasons).toHaveLength(1);
+    expect(invalidReasons[0].reason).toBe('no-start-remark');
   });
 });
 
@@ -467,6 +607,7 @@ describe('end-to-end with real BLSAG', () => {
       { blockNumber: 10, signer: '5Alice', text: encodeAnnounceRemark(PROPOSAL, alice.pk) },
       { blockNumber: 20, signer: '5Bob', text: encodeAnnounceRemark(PROPOSAL, bob.pk) },
       { blockNumber: 30, signer: '5Eve', text: encodeAnnounceRemark(PROPOSAL, eve.pk) },
+      { blockNumber: 35, signer: COORDINATOR, text: encodeStartRemark(PROPOSAL) },
     ];
     const ringBlock = 30;
     const ring = computeRingAt(announces, {
@@ -485,7 +626,7 @@ describe('end-to-end with real BLSAG', () => {
 
     const { tally, votes } = tallyRemarks(
       [...announces, { blockNumber: 42, signer: 'gas-addr', text: remarkText }],
-      { proposalId: PROPOSAL, verify: realVerify },
+      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: realVerify },
     );
     expect(tally).toEqual({ yes: 1, no: 0, abstain: 0, invalid: 0, totalVoted: 1 });
     expect(votes[0].blockNumber).toBe(42);
@@ -528,8 +669,16 @@ describe('end-to-end with real BLSAG', () => {
       earlyRing,
       voteMessageHex(PROPOSAL, 'yes', 20),
     );
+
+    // Coordinator opens voting at block 21, before Alice's vote
+    // lands.
     remarks.push({
       blockNumber: 21,
+      signer: COORDINATOR,
+      text: encodeStartRemark(PROPOSAL),
+    });
+    remarks.push({
+      blockNumber: 22,
       signer: 'gas-alice',
       text: encodeVoteRemark({
         proposalId: PROPOSAL,
@@ -555,6 +704,7 @@ describe('end-to-end with real BLSAG', () => {
 
     const { tally, votes } = tallyRemarks(remarks, {
       proposalId: PROPOSAL,
+      coordinatorAddress: COORDINATOR,
       verify: realVerify,
     });
     // Tally verified Alice's vote against the ring at block 20
@@ -588,6 +738,13 @@ describe('end-to-end with real BLSAG', () => {
       blockNumber: 20,
       signer: '5Bob',
       text: encodeAnnounceRemark(PROPOSAL, bob.pk),
+    });
+
+    // Coordinator opens voting at block 20.
+    remarks.push({
+      blockNumber: 20,
+      signer: COORDINATOR,
+      text: encodeStartRemark(PROPOSAL),
     });
 
     // Alice signs at block 20 → ring={Alice, Bob}, sorted.
@@ -633,6 +790,7 @@ describe('end-to-end with real BLSAG', () => {
 
     const { tally, votes } = tallyRemarks(remarks, {
       proposalId: PROPOSAL,
+      coordinatorAddress: COORDINATOR,
       verify: realVerify,
     });
     expect(tally).toEqual({
@@ -668,6 +826,11 @@ describe('end-to-end with real BLSAG', () => {
         signer: '5Bob',
         text: encodeAnnounceRemark(PROPOSAL, bob.pk),
       },
+      {
+        blockNumber: 25,
+        signer: COORDINATOR,
+        text: encodeStartRemark(PROPOSAL),
+      },
     ];
 
     const ring = computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 20 });
@@ -699,6 +862,7 @@ describe('end-to-end with real BLSAG', () => {
 
     const { tally, votes } = tallyRemarks(remarks, {
       proposalId: PROPOSAL,
+      coordinatorAddress: COORDINATOR,
       verify: realVerify,
     });
     expect(tally).toEqual({

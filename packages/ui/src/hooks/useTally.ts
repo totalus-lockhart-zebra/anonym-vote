@@ -26,12 +26,13 @@ export function useTally(
     () =>
       tallyRemarks([...remarks], {
         proposalId: config.id,
+        coordinatorAddress: config.coordinatorAddress,
         allowedRealAddresses: new Set(config.allowedVoters),
         verify: ringVerify,
       }),
     // Dependency on the array reference (immutable within an
     // indexer update) plus identity of allowedVoters/id is enough
     // for stable memoization.
-    [remarks, config.id, config.allowedVoters],
+    [remarks, config.id, config.coordinatorAddress, config.allowedVoters],
   );
 }

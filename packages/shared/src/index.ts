@@ -68,6 +68,28 @@ export interface AcceptedVote extends VotePayload {
   blockNumber: number;
 }
 
+/**
+ * Reason a vote remark was bucketed as `invalid`. Surfaced in the
+ * tally so the UI can show "vote at block X rejected because Y"
+ * instead of a generic "failed verification" counter.
+ */
+export type InvalidReason =
+  | 'no-start-remark' // coordinator hasn't opened voting yet
+  | 'pre-start-vote' // vote landed at or before the start block
+  | 'ring-too-small' // ring at vote.rb has < 2 members
+  | 'sig-verify-failed' // BLSAG verify returned false (math)
+  | 'sig-structural-error' // verifier threw (malformed bytes)
+  | 'unknown-error';
+
+export interface InvalidVoteEntry {
+  blockNumber: number;
+  /** ringBlock embedded in the vote payload (if parseable). */
+  rb: number | null;
+  reason: InvalidReason;
+  /** Optional extra detail for the operator (e.g. ring size at rb). */
+  detail?: string;
+}
+
 export interface Tally {
   yes: number;
   no: number;
@@ -105,6 +127,7 @@ export type RingSigVerify = (
 // ---------------------------------------------------------------------------
 
 const ANNOUNCE_PREFIX = 'anon-vote-v2:announce:';
+const START_PREFIX = 'anon-vote-v2:start:';
 
 /**
  * Build the text body of an announce remark. Caller publishes it via
@@ -147,6 +170,67 @@ export function parseAnnounceRemark(text: string): AnnouncePayload | null {
   const vkPub = rest.slice(idx + 1).toLowerCase();
   if (!isHex32(vkPub)) return null;
   return { proposalId, vkPub };
+}
+
+// ---------------------------------------------------------------------------
+// Start remark — published by the coordinator to open the voting
+// window. Voters and verifiers refuse to count any vote remark
+// before the block this lands in.
+//
+// The coordinator's only protocol power is "decide WHEN voting
+// opens". They cannot affect WHO votes (allowlist + ring) or
+// WHAT (the choices). They cannot forge or block individual
+// votes. The chain runtime verifies the sr25519 extrinsic
+// signature, so all the verifier needs to do is check that
+// the signer matches the configured coordinator address.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the text body of a start remark. Caller publishes it via
+ * `system.remark` signed by the coordinator wallet at the moment
+ * voting should open.
+ */
+export function encodeStartRemark(proposalId: string): string {
+  if (proposalId.includes(':')) {
+    throw new Error(`proposalId must not contain ':' (got "${proposalId}")`);
+  }
+  return `${START_PREFIX}${proposalId}`;
+}
+
+/**
+ * Parse a remark text as a start payload. Returns the proposalId
+ * if the text matches the expected shape, null otherwise. The
+ * caller is responsible for verifying that the on-chain extrinsic
+ * signer matches the configured coordinator address — that's the
+ * authentication we trust the chain runtime for.
+ */
+export function parseStartRemark(text: string): { proposalId: string } | null {
+  if (typeof text !== 'string' || !text.startsWith(START_PREFIX)) return null;
+  const proposalId = text.slice(START_PREFIX.length);
+  if (proposalId.length === 0 || proposalId.includes(':')) return null;
+  return { proposalId };
+}
+
+/**
+ * Find the chain block number at which the coordinator opened
+ * voting for `proposalId`. The first start remark from the
+ * coordinator wins (if multiple are published, later ones are
+ * harmless dust). Returns null if no valid start remark exists.
+ */
+export function findVotingStartBlock(
+  remarks: RemarkLike[],
+  opts: { proposalId: string; coordinatorAddress: string },
+): number | null {
+  let earliest: number | null = null;
+  for (const r of remarks) {
+    if (r.signer !== opts.coordinatorAddress) continue;
+    const parsed = parseStartRemark(r.text);
+    if (!parsed || parsed.proposalId !== opts.proposalId) continue;
+    if (earliest === null || r.blockNumber < earliest) {
+      earliest = r.blockNumber;
+    }
+  }
+  return earliest;
 }
 
 // ---------------------------------------------------------------------------
@@ -379,10 +463,16 @@ export function tallyRemarks(
   remarks: RemarkLike[],
   opts: {
     proposalId: string;
+    coordinatorAddress: string;
     allowedRealAddresses?: ReadonlySet<string>;
     verify: RingSigVerify;
   },
-): { tally: Tally; votes: AcceptedVote[] } {
+): {
+  tally: Tally;
+  votes: AcceptedVote[];
+  votingStartBlock: number | null;
+  invalidReasons: InvalidVoteEntry[];
+} {
   const tally: Tally = {
     yes: 0,
     no: 0,
@@ -392,6 +482,28 @@ export function tallyRemarks(
   };
   const seenKeyImage = new Set<string>();
   const accepted: AcceptedVote[] = [];
+  const invalidReasons: InvalidVoteEntry[] = [];
+
+  // The coordinator opens voting by publishing a start remark.
+  // Until that remark is observed, no votes count. The check
+  // below uses `<` (strict) so a vote in the same block as the
+  // start remark is considered post-start — they were both
+  // included by the chain author, the temporal ordering within
+  // a block is irrelevant for our protocol.
+  const votingStartBlock = findVotingStartBlock(remarks, {
+    proposalId: opts.proposalId,
+    coordinatorAddress: opts.coordinatorAddress,
+  });
+
+  const recordInvalid = (
+    blockNumber: number,
+    rb: number | null,
+    reason: InvalidReason,
+    detail?: string,
+  ): void => {
+    tally.invalid++;
+    invalidReasons.push({ blockNumber, rb, reason, detail });
+  };
 
   // Sort once by block number so vote dedup ("first wins") is
   // deterministic regardless of how remarks were collected.
@@ -402,43 +514,77 @@ export function tallyRemarks(
     if (!payload) continue;
     if (payload.p !== opts.proposalId) continue;
 
+    // Pre-start guard. Two cases:
+    //   - no start remark at all: all votes invalid
+    //   - vote in a block strictly before start: invalid
+    if (votingStartBlock === null) {
+      recordInvalid(
+        r.blockNumber,
+        payload.rb,
+        'no-start-remark',
+        'no start remark from coordinator observed yet',
+      );
+      continue;
+    }
+    if (r.blockNumber < votingStartBlock) {
+      recordInvalid(
+        r.blockNumber,
+        payload.rb,
+        'pre-start-vote',
+        `vote in block ${r.blockNumber} but start remark at ${votingStartBlock}`,
+      );
+      continue;
+    }
+
     // Reconstruct the ring as the voter saw it. Note we recompute
-    // per vote — for typical small senates this is trivial in cost
-    // (12 voters × 12 votes = 144 ring lookups, microseconds total).
-    // If this ever becomes a bottleneck, memoize on `rb`.
+    // per vote — for typical small senates this is trivial in cost.
     const ring = computeRingAt(remarks, {
       proposalId: opts.proposalId,
       atBlock: payload.rb,
       allowedRealAddresses: opts.allowedRealAddresses,
     });
 
-    // Empty ring → no possible valid signature. Count as invalid
-    // rather than throwing out of the loop, so the rest of the
-    // tally proceeds. (Practically: this happens for the very first
-    // vote on a fresh proposal where the voter signed against ring
-    // size 1 — only their own VK exists yet.)
+    // BLSAG requires ring size >= 2 to be a meaningful anonymity
+    // set. We're stricter than the upstream crate (which would
+    // also reject) for clarity in tally output.
     if (ring.length < 2) {
-      // BLSAG requires ring size >= 2 to be a meaningful anonymity
-      // set. We're stricter than the upstream crate (which would
-      // also reject) for clarity in tally output.
-      tally.invalid++;
+      recordInvalid(
+        r.blockNumber,
+        payload.rb,
+        'ring-too-small',
+        `ring at rb=${payload.rb} has only ${ring.length} member(s)`,
+      );
       continue;
     }
 
     let valid = false;
+    let threwError: string | null = null;
     try {
       valid = opts.verify(
         payload.sig,
         ring,
         voteMessageHex(payload.p, payload.c, payload.rb),
       );
-    } catch {
-      // Structural error from the verifier (malformed hex etc.) —
-      // count as invalid rather than throwing out of the tally loop.
+    } catch (e) {
+      threwError = e instanceof Error ? e.message : String(e);
       valid = false;
     }
     if (!valid) {
-      tally.invalid++;
+      if (threwError !== null) {
+        recordInvalid(
+          r.blockNumber,
+          payload.rb,
+          'sig-structural-error',
+          `verifier threw: ${threwError}`,
+        );
+      } else {
+        recordInvalid(
+          r.blockNumber,
+          payload.rb,
+          'sig-verify-failed',
+          `BLSAG verify returned false against ring of size ${ring.length} at rb=${payload.rb}`,
+        );
+      }
       continue;
     }
 
@@ -450,7 +596,7 @@ export function tallyRemarks(
     accepted.push({ ...payload, blockNumber: r.blockNumber });
   }
 
-  return { tally, votes: accepted };
+  return { tally, votes: accepted, votingStartBlock, invalidReasons };
 }
 
 // ---------------------------------------------------------------------------

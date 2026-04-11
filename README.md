@@ -118,54 +118,89 @@ byte-identical on both sides.
 
 ### 2.3 Protocol flow
 
-There are no phases. The proposal has a single `startBlock` and
-no end block — voting is open-ended. Voters announce lazily, on
-their first interaction with the UI, in the same session as
-casting their vote. The ring is **dynamic**: it starts empty at
-`startBlock` and grows as voters announce.
+The proposal has **two phases**, separated by a coordinator-
+published `start` remark:
 
 ```
-blocks:  startBlock                                        ∞
-         ├──────────────────────────────────────────────────►
-flow:    voters announce + vote in the same session,
-         each producing one announce-remark (signed by real
-         wallet) and one vote-remark (signed by a fresh gas
-         wallet). Ring grows monotonically. Tally is live.
+blocks:  startBlock                       Coordinator's start remark
+         ├──────────────────────────────┤────────────────────────────►
+phase:           announce                          voting
+                 (Register)                     (Yes/No/Abstain)
 ```
 
-The single non-trivial concept is **ringBlock**: every vote
-embeds the chain block number at which the voter computed the
-canonical ring. Verifiers reconstruct the ring at that exact
-block when checking the signature. This is what lets early voters
-sign against a small ring while later voters use a larger one,
-and have both verify correctly forever — each vote is checked
-against its own snapshot, not against the latest head.
+- **Announce phase** runs from `startBlock` until the
+  coordinator publishes a `system.remark("anon-vote-v2:start:<id>")`
+  from the configured coordinator address. During this window
+  voters publish their voting public keys (signed by their real
+  wallet) but **cannot vote**. The UI shows only the "Register"
+  button.
 
-**First-time voter session** (one extension popup):
+- **Voting phase** opens the moment the coordinator's start
+  remark lands in a block. After this, registered voters can
+  ring-sign their choice and publish the vote remark via a
+  throwaway gas wallet (zero extension popups for already-
+  registered voters). The voting window never closes — late
+  voters can come back days later and the tally keeps updating.
+
+**Why two phases**: this is the central defense against on-chain
+**timing-correlation**. In a one-phase ("lazy announce") flow, a
+voter publishes their announce and their vote within ~30 seconds
+of each other in the same browser session. An observer watching
+the chain in real time can pair them by temporal proximity even
+without breaking the ring signature math. The two-phase model
+breaks this: announces concentrate in one window (hours/days
+before voting opens) and votes concentrate in another (after
+the coordinator opens it). The temporal gap between any
+individual voter's announce and their vote is now hours/days
+instead of seconds, so the announce-vote pairing is destroyed
+in the noise of all the other announces in the announce window.
+
+**The coordinator's only protocol power** is "decide WHEN
+voting opens". They cannot affect WHO votes (allowlist + ring),
+WHAT (the choices), or count anything (tally is local).
+Operationally: the coordinator is just one of the senate
+members holding a known wallet, and "publishing the start
+remark" is the modern equivalent of the chair calling the vote
+to order.
+
+**The single non-trivial cryptographic concept** is **ringBlock**:
+every vote embeds the chain block number at which the voter
+computed the canonical ring before signing. Verifiers
+reconstruct the ring at exactly that block when checking the
+signature. This lets early voters sign against a smaller ring
+than later voters and have both verify correctly forever.
+
+**Voter session in announce phase** (Register, one extension popup):
 1. Browser generates a Ristretto255 voting keypair (VKsk/VKpub).
 2. Browser asks the polkadot.js extension to sign and publish
    `system.remark("anon-vote-v2:announce:<id>:<VKpub>")` from
    the voter's real wallet.
 3. Browser waits until the local indexer observes the announce.
-4. Browser generates a fresh sr25519 gas wallet.
-5. Browser ring-signs `drip:<id>:<gasAddress>:<ringBlock>` with
-   VKsk against the canonical ring at the current head.
-6. Browser POSTs the ring sig to `/faucet/drip`. Faucet
+4. UI shows "✓ Registered. Waiting for coordinator to open
+   voting…". The voter can close the tab.
+
+**Voter session in voting phase** (Yes/No/Abstain, zero extension popups):
+1. Browser already has VKsk in localStorage from the announce
+   phase, plus the corresponding announce already on chain.
+2. Voter clicks a choice.
+3. Browser generates a fresh sr25519 gas wallet locally.
+4. Browser ring-signs `drip:<id>:<gasAddress>:<ringBlock>` with
+   VKsk against the ring at `ringBlock`.
+5. Browser POSTs the ring sig to `/faucet/drip`. Faucet
    reconstructs the ring at the same `ringBlock`, verifies, and
    sends TAO to the gas address.
-7. Browser waits for the gas balance to land.
-8. Browser ring-signs `vote:<id>:<choice>:<ringBlock>` with the
+6. Browser waits for the gas balance to land.
+7. Browser ring-signs `vote:<id>:<choice>:<ringBlock>` with the
    same VKsk (same key image, different message).
-9. Browser submits `system.remark(vote payload)` signed by the
+8. Browser submits `system.remark(vote payload)` signed by the
    gas wallet. Done.
 
-**Returning voter session** (zero extension popups, on a new
-proposal): same VK already in localStorage from the previous
-proposal? No — keys are per-proposal. But within the same
-proposal a returning voter still needs to re-execute the lazy
-announce on the new device, because there's no point keeping a
-key that was already used to vote. Per-proposal isolation is by
-design (see §2.6 for why).
+**Late voter** (didn't register in the announce window): clicks
+a choice in the voting phase, UI invisibly does step 1-4 of the
+announce session followed by step 3-8 of the voting session in
+one shot. Works, but their announce and vote are temporally
+adjacent — a chain observer can pair them by timing. We don't
+warn the voter; the only mitigation is "register on time".
 
 ### 2.4 Messages
 
@@ -460,19 +495,38 @@ export const PROPOSAL: ProposalConfig = {
   description: '…',
   allowedVoters: ['5Cs…', '5D4…', …],
   startBlock: 123456,
+  coordinatorAddress: '5XYZ…',
 };
 ```
 
 The `TODO(operator)` comments in that file call out what to fill
 in before shipping. The allowlist and start block MUST match the
 faucet's env vars byte-for-byte, otherwise ring reconstruction
-diverges and every drip verification fails.
+diverges and every drip verification fails. The
+`coordinatorAddress` is the SS58 of the wallet that will publish
+the `start` remark when the senate is ready to open voting; the
+UI watches for this remark and flips from announce phase to
+voting phase the moment it lands.
 
-When you want to start a NEW proposal: change `id`, update `title`
-and `description`, and set `startBlock` to the current chain head
-(so old announces from the previous proposal don't bleed in).
-Voters generate fresh VKs for each new proposal automatically —
-there is no cross-proposal key reuse.
+When you want to start a NEW proposal: change `id`, update
+`title` and `description`, set `startBlock` to the current chain
+head (so old announces from the previous proposal don't bleed
+in), and decide who the coordinator is (usually the same wallet
+across proposals; you can change it per proposal too). Voters
+generate fresh VKs for each new proposal automatically — there
+is no cross-proposal key reuse.
+
+**Opening voting**: when the announce window has been open long
+enough for the senate to register, the coordinator publishes the
+start remark by submitting one extrinsic from their wallet:
+```
+system.remark("anon-vote-v2:start:proposal-1")
+```
+This can be done from polkadot.js apps, the Subtensor CLI, or
+any tool that can sign a system.remark from the coordinator's
+account. The UI in every voter's browser sees the new remark on
+the next subscription tick and immediately flips to voting
+phase.
 
 The UI does accept two runtime env vars (via Vite):
 

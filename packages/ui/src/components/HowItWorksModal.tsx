@@ -37,29 +37,32 @@ export default function HowItWorksModal({ open, onClose }: Props) {
 
         <div className="hiw-body">
           <p className="hiw-lead">
-            Click a choice. Approve one wallet popup. Wait ~30 seconds.
-            Done. The on-chain payload proves <em>some</em> ring member
-            voted <em>this choice</em> — without revealing which one.
+            Voting happens in two phases: <strong>register</strong> first,
+            then <strong>vote</strong> after the coordinator opens the
+            window. Both your real wallet and a throwaway gas wallet take
+            turns on chain — but math (BLSAG ring signatures) and the time
+            gap between the phases together ensure that nobody can link
+            your real account to your vote choice.
           </p>
 
           <ol className="hiw-steps">
             <li>
               <div className="hiw-step-num">1</div>
               <div>
-                <strong>Generate a voting key</strong>
+                <strong>Generate a voting key (browser, instant)</strong>
                 <p>
-                  Your browser generates a fresh Ristretto255 keypair
-                  and saves the secret half in <code>localStorage</code>.
-                  The public half is the only thing that ever leaves
-                  the browser. A new key is generated for each
-                  proposal — no cross-proposal linkability.
+                  Your browser generates a fresh Ristretto255 keypair and
+                  saves the secret half in <code>localStorage</code>. The
+                  public half is the only thing that ever leaves the
+                  browser. A new key is generated for each proposal — no
+                  cross-proposal linkability.
                 </p>
               </div>
             </li>
             <li>
               <div className="hiw-step-num">2</div>
               <div>
-                <strong>Announce the voting key on chain</strong>
+                <strong>Register on chain (your real wallet)</strong>
                 <p>
                   Your real Polkadot wallet signs a{' '}
                   <code>system.remark</code> of the form{' '}
@@ -67,65 +70,56 @@ export default function HowItWorksModal({ open, onClose }: Props) {
                     anon-vote-v2:announce:&lt;proposal&gt;:&lt;vkPub&gt;
                   </code>
                   . This is the only moment your real wallet
-                  participates. It publishes your public voting key
-                  for this proposal — not your choice.
+                  participates. The remark publishes your public voting
+                  key for this proposal — <em>not</em> your choice.
                 </p>
               </div>
             </li>
             <li>
               <div className="hiw-step-num">3</div>
               <div>
-                <strong>Reconstruct the canonical ring</strong>
+                <strong>Wait for the coordinator to open voting</strong>
                 <p>
-                  Your browser scans the chain for all valid announce
-                  remarks since the proposal started, and assembles
-                  them into a deterministically-sorted list — the{' '}
-                  <strong>ring</strong>. Every observer (UI, faucet,
-                  late verifier) reconstructs the same ring at the
-                  same block number, so signatures stay valid forever.
+                  After everyone has registered, the coordinator
+                  publishes a special <code>start</code> remark from
+                  their wallet. The UI watches for it and flips
+                  automatically into the voting phase the moment it
+                  lands. The gap between your registration and the
+                  start signal is the protocol's defense against
+                  on-chain timing-correlation — observers can no
+                  longer pair "this announce" with "that vote" by
+                  looking at clock times.
                 </p>
               </div>
             </li>
             <li>
               <div className="hiw-step-num">4</div>
               <div>
-                <strong>Ring-sign a drip request</strong>
+                <strong>Cast your vote (browser, no popup)</strong>
                 <p>
-                  Your browser generates a fresh sr25519 <em>gas
-                  wallet</em> and ring-signs the message{' '}
+                  Click Yes / No / Abstain. Your browser ring-signs{' '}
                   <code>
                     drip:&lt;proposal&gt;:&lt;gas&gt;:&lt;ringBlock&gt;
                   </code>{' '}
-                  with your voting key secret. The faucet verifies
-                  the signature, dedupes by the <strong>key
-                  image</strong> (a deterministic unlinkable
-                  nullifier), and transfers TAO to the gas wallet.
+                  with your voting key, sends it to the faucet
+                  (which verifies the ring signature and funds a
+                  fresh gas wallet), then ring-signs{' '}
+                  <code>
+                    vote:&lt;proposal&gt;:&lt;choice&gt;:&lt;ringBlock&gt;
+                  </code>{' '}
+                  and publishes <code>system.remark</code> from the
+                  gas wallet. The gas wallet is a brand-new sr25519
+                  key with no history — observers see only "some
+                  fresh gas address voted X", not "you voted X".
                 </p>
               </div>
             </li>
             <li>
               <div className="hiw-step-num">5</div>
               <div>
-                <strong>Ring-sign the vote, publish via gas wallet</strong>
-                <p>
-                  Your browser ring-signs{' '}
-                  <code>
-                    vote:&lt;proposal&gt;:&lt;choice&gt;:&lt;ringBlock&gt;
-                  </code>{' '}
-                  with the same voting key (same key image, different
-                  message). Then it submits{' '}
-                  <code>system.remark(...)</code> signed by the GAS
-                  wallet — a throwaway address unrelated to your real
-                  account.
-                </p>
-              </div>
-            </li>
-            <li>
-              <div className="hiw-step-num">6</div>
-              <div>
                 <strong>Anyone can verify the tally</strong>
                 <p>
-                  Anyone with a chain RPC scans the vote remarks,
+                  The Results tab scans the chain for vote remarks,
                   reconstructs the ring at each vote's embedded
                   ringBlock, verifies the ring signature against
                   that ring, drops second-and-later remarks with the
@@ -138,19 +132,22 @@ export default function HowItWorksModal({ open, onClose }: Props) {
           </ol>
 
           <div className="hiw-caveat">
-            <strong>Trust note.</strong> Anonymity rests on the BLSAG
-            ring signature primitive. The faucet cannot link drips
-            to real voters because the drip request carries only a
-            ring signature and a fresh gas address — neither tied to
-            your real wallet. The faucet can refuse service
-            (censorship) but cannot forge or de-anonymize.
-            <br /><br />
-            <strong>Anonymity caveat.</strong> The ring grows as more
-            voters join. The very first voter has the smallest
-            anonymity set; later voters get progressively larger
-            rings. The UI shows the current ring size before you
-            click — wait for a few others to join if you want
-            stronger anonymity.
+            <strong>What's hidden:</strong> the link between any real
+            wallet and any vote choice. The ring signature math
+            guarantees it; no one — not the chain, not the faucet, not
+            other voters — can invert it.
+            <br />
+            <br />
+            <strong>What's visible:</strong> who is registered (your
+            real wallet's announce remark is on chain) and the total
+            count of votes per choice. Visibility of <em>participation</em>
+            but not <em>choice</em> is an inherent property of any ring-
+            signature scheme.
+            <br />
+            <br />
+            <strong>Trust the coordinator for what?</strong> Only for
+            "deciding when voting opens". They cannot forge votes,
+            block specific voters, or learn how anyone voted.
           </div>
         </div>
       </div>

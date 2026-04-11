@@ -37,6 +37,17 @@ export interface ProposalConfig {
    * other timezones can vote whenever they want.
    */
   readonly startBlock: number;
+  /**
+   * SS58 address of the coordinator wallet. The coordinator's
+   * only protocol power is to publish a `start` remark on chain
+   * (signed by this address) at the moment voting should open.
+   * Until that remark is observed, the UI shows the announce
+   * phase and refuses to let voters cast. After it's observed,
+   * the UI flips to the voting phase.
+   *
+   * MUST match `COORDINATOR_ADDRESS` in the faucet's .env.
+   */
+  readonly coordinatorAddress: string;
 }
 
 export const PROPOSAL: ProposalConfig = {
@@ -56,5 +67,10 @@ export const PROPOSAL: ProposalConfig = {
   ],
   // TODO(operator): set to the chain head block at the moment the proposal
   // is published. Blocks before this are never scanned.
-  startBlock: 318718,
+  startBlock: 319100,
+  // TODO(operator): the SS58 address whose `system.remark("anon-vote-v2:start:<id>")`
+  // signals "voting is now open". Until this remark appears on chain,
+  // the UI shows only the Register button. The same address must be
+  // configured on the faucet side as COORDINATOR_ADDRESS.
+  coordinatorAddress: '5Ff9wuYWk2r8qKutC5NKGBqEVY2rty5JXCBTXz5Tm7ndiWwQ',
 };

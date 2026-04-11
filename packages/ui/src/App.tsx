@@ -19,16 +19,19 @@ import { useWallet } from './hooks/useWallet';
 import { useIndexer } from './hooks/useIndexer';
 import { useRing } from './hooks/useRing';
 import { useTally } from './hooks/useTally';
+import { useVotingPhase } from './hooks/useVotingPhase';
 import { PROPOSAL } from './proposal';
 import VoteScreen from './components/VoteScreen';
 import ResultsScreen from './components/ResultsScreen';
 import ParticipantsScreen from './components/ParticipantsScreen';
+import CoordinatorScreen from './components/CoordinatorScreen';
 import HowItWorksModal from './components/HowItWorksModal';
 
 const TABS = [
   { id: 'action', label: 'Vote' },
   { id: 'results', label: 'Results' },
   { id: 'participants', label: 'Participants' },
+  { id: 'coordinator', label: 'Coordinator' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
@@ -44,7 +47,8 @@ export default function App() {
   const wallet = useWallet([...PROPOSAL.allowedVoters]);
   const indexer = useIndexer(PROPOSAL);
   const ring = useRing(indexer.remarks, PROPOSAL, wallet.address ?? null);
-  const { tally, votes } = useTally(indexer.remarks, PROPOSAL);
+  const phase = useVotingPhase(indexer.remarks, PROPOSAL);
+  const { tally, votes, invalidReasons } = useTally(indexer.remarks, PROPOSAL);
 
   const isAllowlisted = Boolean(wallet.isAllowed);
 
@@ -54,9 +58,15 @@ export default function App() {
         <div className="topbar-left">
           <div className="logo">
             <span className="logo-mark">◈</span>
-            <span className="logo-text">SubVoter</span>
+            <span className="logo-text">TaoVoter</span>
           </div>
           <span className="proposal-chip">{PROPOSAL.id}</span>
+          <span
+            className="proposal-chip"
+            style={{ textTransform: 'capitalize' }}
+          >
+            {phase.phase}
+          </span>
           <button
             className="hiw-trigger"
             onClick={() => setHowItWorksOpen(true)}
@@ -100,7 +110,9 @@ export default function App() {
               onClick={wallet.connect}
               disabled={wallet.status === 'connecting'}
             >
-              {wallet.status === 'connecting' ? 'Connecting…' : 'Connect wallet'}
+              {wallet.status === 'connecting'
+                ? 'Connecting…'
+                : 'Connect wallet'}
             </button>
           )}
         </div>
@@ -135,6 +147,7 @@ export default function App() {
             wallet={wallet}
             indexer={indexer}
             ring={ring}
+            phase={phase}
             votes={votes}
           />
         )}
@@ -145,6 +158,7 @@ export default function App() {
             ring={ring}
             tally={tally}
             votes={votes}
+            invalidReasons={invalidReasons}
             config={PROPOSAL}
           />
         )}
@@ -155,6 +169,10 @@ export default function App() {
             totalVoted={tally.totalVoted}
             loading={indexer.status === 'indexing'}
           />
+        )}
+
+        {tab === 'coordinator' && (
+          <CoordinatorScreen wallet={wallet} phase={phase} />
         )}
       </main>
 

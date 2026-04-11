@@ -14,7 +14,11 @@
 import type { ProposalConfig } from '../proposal';
 import type { IndexerSnapshot } from '../hooks/useIndexer';
 import type { RingState } from '../hooks/useRing';
-import type { AcceptedVote, Tally } from '@anon-vote/shared';
+import type {
+  AcceptedVote,
+  InvalidVoteEntry,
+  Tally,
+} from '@anon-vote/shared';
 import { SUBTENSOR_WS } from '../config';
 
 function explorerLink(blockHash: string): string {
@@ -63,6 +67,7 @@ export interface ResultsScreenProps {
   ring: RingState;
   tally: Tally;
   votes: AcceptedVote[];
+  invalidReasons: InvalidVoteEntry[];
   config: ProposalConfig;
 }
 
@@ -71,6 +76,7 @@ export default function ResultsScreen({
   ring,
   tally,
   votes,
+  invalidReasons,
   config,
 }: ResultsScreenProps) {
   const counted = tally.yes + tally.no + tally.abstain;
@@ -148,12 +154,15 @@ export default function ResultsScreen({
           <div className="res-metric-label">Voted</div>
           <div className="res-metric-value">
             {tally.totalVoted}
-            <span className="res-metric-denom">/{ring.ring.length}</span>
+            <span className="res-metric-denom">/{config.allowedVoters.length}</span>
           </div>
         </div>
         <div className="res-metric">
-          <div className="res-metric-label">Ring size</div>
-          <div className="res-metric-value">{ring.ring.length}</div>
+          <div className="res-metric-label">Registered</div>
+          <div className="res-metric-value">
+            {ring.ring.length}
+            <span className="res-metric-denom">/{config.allowedVoters.length}</span>
+          </div>
         </div>
         <div className="res-metric">
           <div className="res-metric-label">Invalid</div>
@@ -179,8 +188,32 @@ export default function ResultsScreen({
         />
         {tally.invalid > 0 && (
           <div className="res-invalid">
-            {tally.invalid} remark(s) failed ring-signature verification —
-            not counted.
+            <strong>
+              {tally.invalid} remark{tally.invalid === 1 ? '' : 's'} not
+              counted.
+            </strong>
+            <ul
+              style={{
+                margin: '8px 0 0 0',
+                padding: '0 0 0 18px',
+                fontSize: '12px',
+                lineHeight: '1.6',
+              }}
+            >
+              {invalidReasons.map((entry, i) => (
+                <li key={i}>
+                  block <code>{entry.blockNumber}</code>
+                  {entry.rb !== null && (
+                    <>
+                      {' '}
+                      (rb=<code>{entry.rb}</code>)
+                    </>
+                  )}{' '}
+                  — <code>{entry.reason}</code>
+                  {entry.detail && <>: {entry.detail}</>}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         <div
