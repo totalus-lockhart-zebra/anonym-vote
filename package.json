@@ -6,6 +6,8 @@
     "packages/*"
   ],
   "scripts": {
+    "heroku-prebuild": "bash scripts/heroku-prebuild.sh",
+    "wasm:build": "bash scripts/heroku-prebuild.sh",
     "shared:build": "npm run build --workspace=@anon-vote/shared",
     "api:dev": "npm run start:dev --workspace=@anon-vote/api",
     "api:build": "npm run build --workspace=@anon-vote/api",
