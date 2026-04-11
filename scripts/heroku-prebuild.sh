@@ -28,6 +28,18 @@
 # ===========================================================================
 set -euo pipefail
 
+# Fast path: if both wasm output directories already exist on disk
+# (e.g. they were committed by a CI build before deploy), skip the
+# Rust install entirely. This makes Heroku deploys ~30s instead of
+# ~5min when wasm is pre-built upstream.
+if [ -d packages/ring-sig/wasm/pkg-bundler ] && \
+   [ -d packages/ring-sig/wasm/pkg ] && \
+   [ -f packages/ring-sig/wasm/pkg-bundler/package.json ] && \
+   [ -f packages/ring-sig/wasm/pkg/package.json ]; then
+  echo "===> heroku-prebuild: wasm artifacts already present, skipping Rust install"
+  exit 0
+fi
+
 echo "===> heroku-prebuild: ensuring Rust toolchain"
 if ! command -v cargo >/dev/null 2>&1; then
   echo "     installing rustup (stable, minimal profile)"
