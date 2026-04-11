@@ -1,55 +1,33 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
-import type { ProposalConfig } from '../config/faucet.config';
-import { FundRequestDto } from './dto/fund-request.dto';
-import { CredentialResponse, FaucetService } from './faucet.service';
-import { IndexerService } from './indexer.service';
-import type { IndexerSnapshot } from './indexer.service';
+import { DripRequestDto } from './drip-request.dto';
+import { FaucetService } from './faucet.service';
+import type { DripResponse, FaucetInfo } from './faucet.service';
 
+/**
+ * Public HTTP surface of the v2 faucet.
+ *
+ * Only two endpoints, both stateless from the caller's perspective:
+ *
+ *   POST /faucet/drip   — ring-sig-authenticated drip request
+ *   GET  /faucet/info   — transparency / health (faucet address,
+ *                         ring status, remaining budget)
+ *
+ * Everything else the UI used to fetch (proposal, voters, coord key,
+ * votes) is gone. The UI reads the chain directly and holds the
+ * proposal definition statically, so the only server-side state the
+ * faucet exposes is what it itself is responsible for.
+ */
 @Controller('faucet')
 export class FaucetController {
-  constructor(
-    private readonly faucet: FaucetService,
-    private readonly indexer: IndexerService,
-  ) {}
+  constructor(private readonly faucet: FaucetService) {}
 
-  /** Public key the UI uses to verify on-chain credentials. */
-  @Get('coord')
-  getCoord(): { address: string } {
-    return { address: this.faucet.getCoordAddress() };
+  @Post('drip')
+  async drip(@Body() body: DripRequestDto): Promise<DripResponse> {
+    return this.faucet.processDrip(body);
   }
 
-  /** Allowlist of SS58 addresses that may vote on the current proposal. */
-  @Get('voters')
-  getVoters(): { voters: string[] } {
-    return { voters: this.faucet.getAllowedVoters() };
-  }
-
-  /** Active proposal definition (id, title, description, deadline, quorum, startBlock). */
-  @Get('proposal')
-  getProposal(): ProposalConfig {
-    return this.faucet.getProposal();
-  }
-
-  /**
-   * Fund the stealth address (if needed) and return a coordinator-signed
-   * credential. The UI embeds this credential in the remark it publishes
-   * from the stealth wallet.
-   */
-  @Post('fund')
-  async fund(@Body() body: FundRequestDto): Promise<CredentialResponse> {
-    return this.faucet.issueCredential(body);
-  }
-
-  /**
-   * Indexed `system.remark` extrinsics from `[startBlock..head]`.
-   *
-   * The backend pre-fetches blocks in the background and serves them from
-   * memory so the UI doesn't have to scan the chain itself. The response
-   * also includes a `status` field — `indexing` if the catch-up is still
-   * more than ~10 blocks behind head, `ready` otherwise.
-   */
-  @Get('votes')
-  getVotes(): IndexerSnapshot {
-    return this.indexer.getSnapshot();
+  @Get('info')
+  info(): FaucetInfo {
+    return this.faucet.getInfo();
   }
 }

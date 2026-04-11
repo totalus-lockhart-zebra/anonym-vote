@@ -6,6 +6,7 @@
     "packages/*"
   ],
   "scripts": {
+    "shared:build": "npm run build --workspace=@anon-vote/shared",
     "api:dev": "npm run start:dev --workspace=@anon-vote/api",
     "api:build": "npm run build --workspace=@anon-vote/api",
     "api:start": "npm run start:prod --workspace=@anon-vote/api",
@@ -13,10 +14,10 @@
     "ui:dev": "npm run dev --workspace=@anon-vote/ui",
     "ui:build": "npm run build --workspace=@anon-vote/ui",
     "ui:check-format": "npm run check-format --workspace=@anon-vote/ui",
-    "build": "npm run build --workspaces",
+    "build": "npm run shared:build && npm run api:build && npm run ui:build",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
-    "dev": "concurrently \"npm run api:dev\" \"npm run ui:dev\""
+    "test": "npm run shared:build && npm run test --workspaces --if-present",
+    "dev": "npm run shared:build && concurrently \"npm run api:dev\" \"npm run ui:dev\""
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

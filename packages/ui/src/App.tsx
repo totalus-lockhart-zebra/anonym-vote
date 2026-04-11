@@ -1,46 +1,52 @@
+/**
+ * App root.
+ *
+ * Proposal config is imported statically from `proposal.ts`. Every
+ * remark is scanned locally by the browser indexer. The only server
+ * contacted in the voting flow is the faucet, for the `/drip`
+ * endpoint — and even that is trust-minimized (see faucet-drip.ts).
+ *
+ * No phases. There is one screen — VoteScreen — which detects its
+ * own state internally (haven't announced yet → first-time flow,
+ * already announced → fast vote, already voted → done state).
+ *
+ * Results and Participants tabs are always reachable; they're pure
+ * reads of the indexer snapshot and make sense at any time.
+ */
+
 import { useState } from 'react';
 import { useWallet } from './hooks/useWallet';
-import { useVotes } from './hooks/useVotes';
-import { useVoters } from './hooks/useVoters';
-import { useProposal } from './hooks/useProposal';
+import { useIndexer } from './hooks/useIndexer';
+import { useRing } from './hooks/useRing';
+import { useTally } from './hooks/useTally';
+import { PROPOSAL } from './proposal';
 import VoteScreen from './components/VoteScreen';
 import ResultsScreen from './components/ResultsScreen';
 import ParticipantsScreen from './components/ParticipantsScreen';
 import HowItWorksModal from './components/HowItWorksModal';
 
 const TABS = [
-  { id: 'vote', label: 'Vote' },
+  { id: 'action', label: 'Vote' },
   { id: 'results', label: 'Results' },
   { id: 'participants', label: 'Participants' },
-];
+] as const;
+type TabId = (typeof TABS)[number]['id'];
 
-function shortAddr(addr) {
+function shortAddr(addr?: string | null): string {
   if (!addr) return '';
-  return addr.slice(0, 6) + '…' + addr.slice(-4);
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
 export default function App() {
-  const [tab, setTab] = useState('vote');
+  const [tab, setTab] = useState<TabId>('action');
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
-  const { voters, loading: votersLoading, error: votersError } = useVoters();
-  const {
-    proposal,
-    loading: proposalLoading,
-    error: proposalError,
-  } = useProposal();
-  const wallet = useWallet(voters);
-  const {
-    tally,
-    loading,
-    refreshing,
-    error,
-    progress,
-    alreadyVoted,
-    isPastDeadline,
-    refresh,
-    indexedRemarks,
-    indexerStatus,
-  } = useVotes(wallet.address, proposal);
+
+  const wallet = useWallet([...PROPOSAL.allowedVoters]);
+  const indexer = useIndexer(PROPOSAL);
+  const ring = useRing(indexer.remarks, PROPOSAL, wallet.address ?? null);
+  const { tally, votes } = useTally(indexer.remarks, PROPOSAL);
+
+  const isAllowlisted = Boolean(wallet.isAllowed);
 
   return (
     <div className="app">
@@ -50,7 +56,7 @@ export default function App() {
             <span className="logo-mark">◈</span>
             <span className="logo-text">SubVoter</span>
           </div>
-          <span className="proposal-chip">{proposal?.id ?? '…'}</span>
+          <span className="proposal-chip">{PROPOSAL.id}</span>
           <button
             className="hiw-trigger"
             onClick={() => setHowItWorksOpen(true)}
@@ -59,34 +65,28 @@ export default function App() {
           >
             ?
           </button>
-          {isPastDeadline && (
-            <span
-              className="proposal-chip"
-              style={{ color: 'var(--yes)', borderColor: 'rgba(34,197,94,.3)' }}
-            >
-              closed
-            </span>
-          )}
         </div>
         <div className="topbar-right">
           {wallet.status === 'connected' ? (
             <div className="wallet-connected">
               <span
-                className={`wallet-badge ${wallet.isAllowed ? 'allowed' : 'not-allowed'}`}
+                className={`wallet-badge ${isAllowlisted ? 'allowed' : 'not-allowed'}`}
               >
-                {wallet.isAllowed ? 'eligible voter' : 'not eligible'}
+                {isAllowlisted ? 'eligible voter' : 'not eligible'}
               </span>
               {wallet.accounts.length > 1 && (
                 <select
                   className="account-select"
-                  value={wallet.address}
+                  value={wallet.address ?? ''}
                   onChange={(e) => wallet.switchAccount(e.target.value)}
                 >
-                  {wallet.accounts.map((a) => (
-                    <option key={a.address} value={a.address}>
-                      {a.meta.name || shortAddr(a.address)}
-                    </option>
-                  ))}
+                  {wallet.accounts.map(
+                    (a: { address: string; meta?: { name?: string } }) => (
+                      <option key={a.address} value={a.address}>
+                        {a.meta?.name || shortAddr(a.address)}
+                      </option>
+                    ),
+                  )}
                 </select>
               )}
               <span className="wallet-addr">{shortAddr(wallet.address)}</span>
@@ -100,23 +100,17 @@ export default function App() {
               onClick={wallet.connect}
               disabled={wallet.status === 'connecting'}
             >
-              {wallet.status === 'connecting'
-                ? 'Connecting…'
-                : 'Connect wallet'}
+              {wallet.status === 'connecting' ? 'Connecting…' : 'Connect wallet'}
             </button>
           )}
         </div>
       </header>
 
       {wallet.error && <div className="wallet-error">{wallet.error}</div>}
-      {votersError && (
+      {PROPOSAL.allowedVoters.length === 0 && (
         <div className="wallet-error">
-          Failed to load voter list from faucet: {votersError}
-        </div>
-      )}
-      {proposalError && (
-        <div className="wallet-error">
-          Failed to load proposal from faucet: {proposalError}
+          ⚠ proposal.ts has an empty <code>allowedVoters</code> list. Edit it
+          and rebuild before running a real proposal.
         </div>
       )}
 
@@ -128,10 +122,7 @@ export default function App() {
             onClick={() => setTab(t.id)}
           >
             {t.label}
-            {t.id === 'vote' && alreadyVoted && (
-              <span className="tab-dot done" />
-            )}
-            {t.id === 'results' && tally && tally.totalVoted > 0 && (
+            {t.id === 'results' && tally.totalVoted > 0 && (
               <span className="tab-count">{tally.totalVoted}</span>
             )}
           </button>
@@ -139,44 +130,31 @@ export default function App() {
       </nav>
 
       <main className="content">
-        {proposalLoading || !proposal ? (
-          <div className="vs-status">
-            <div className="vs-spinner" />
-            <p>Loading proposal…</p>
-          </div>
-        ) : (
-          <>
-            {tab === 'vote' && (
-              <VoteScreen
-                wallet={wallet}
-                alreadyVoted={alreadyVoted}
-                onVoted={refresh}
-                proposal={proposal}
-              />
-            )}
-            {tab === 'results' && (
-              <ResultsScreen
-                tally={tally}
-                loading={loading}
-                refreshing={refreshing}
-                error={error}
-                progress={progress}
-                refresh={refresh}
-                isPastDeadline={isPastDeadline}
-                voters={voters}
-                proposal={proposal}
-                indexedRemarks={indexedRemarks}
-                indexerStatus={indexerStatus}
-              />
-            )}
-            {tab === 'participants' && (
-              <ParticipantsScreen
-                voters={voters}
-                totalVoted={tally?.totalVoted ?? 0}
-                loading={loading || votersLoading}
-              />
-            )}
-          </>
+        {tab === 'action' && (
+          <VoteScreen
+            wallet={wallet}
+            indexer={indexer}
+            ring={ring}
+            votes={votes}
+          />
+        )}
+
+        {tab === 'results' && (
+          <ResultsScreen
+            indexer={indexer}
+            ring={ring}
+            tally={tally}
+            votes={votes}
+            config={PROPOSAL}
+          />
+        )}
+
+        {tab === 'participants' && (
+          <ParticipantsScreen
+            voters={[...PROPOSAL.allowedVoters]}
+            totalVoted={tally.totalVoted}
+            loading={indexer.status === 'indexing'}
+          />
         )}
       </main>
 

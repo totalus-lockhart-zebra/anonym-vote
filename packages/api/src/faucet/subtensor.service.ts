@@ -13,24 +13,28 @@ import { FaucetConfig } from '../config/faucet.config';
 /**
  * Singleton subtensor client. Owns:
  *   - the @polkadot/api connection (created lazily, closed on shutdown)
- *   - the coordinator/faucet keypair (derived from the mnemonic in env)
- *   - the two operations we actually care about: balance lookup and
- *     `balances.transferKeepAlive`.
+ *   - the faucet keypair (derived from the mnemonic in env)
+ *   - two operations: balance lookup and `balances.transferKeepAlive`
+ *
+ * In v2 the faucet has no cryptographic role beyond signing its own
+ * funding extrinsics — it signs nothing that a voter later presents as
+ * proof. Eligibility is carried by the ring signature the voter mints
+ * locally, and this service just pays gas for one transfer per caller.
  */
 @Injectable()
 export class SubtensorService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SubtensorService.name);
   private api: ApiPromise | null = null;
   private apiPromise: Promise<ApiPromise> | null = null;
-  private coordPair: KeyringPair | null = null;
+  private faucetPair: KeyringPair | null = null;
 
   constructor(private readonly config: FaucetConfig) {}
 
   async onModuleInit(): Promise<void> {
     await cryptoWaitReady();
     const keyring = new Keyring({ type: 'sr25519' });
-    this.coordPair = keyring.addFromUri(this.config.coordMnemonic);
-    this.logger.log(`Coordinator address: ${this.coordPair.address}`);
+    this.faucetPair = keyring.addFromUri(this.config.faucetMnemonic);
+    this.logger.log(`Faucet address: ${this.faucetPair.address}`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -41,25 +45,18 @@ export class SubtensorService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** The coordinator SS58 address — this is what the UI uses to verify credentials. */
-  getCoordAddress(): string {
-    if (!this.coordPair) {
-      throw new Error('Coordinator keypair not initialised yet');
+  /** Public SS58 of the faucet account — shown in `/faucet/info` for transparency. */
+  getFaucetAddress(): string {
+    if (!this.faucetPair) {
+      throw new Error('Faucet keypair not initialised yet');
     }
-    return this.coordPair.address;
-  }
-
-  /** Sign arbitrary bytes with the coordinator keypair (sr25519, raw, no wrapping). */
-  signWithCoord(message: Uint8Array): Uint8Array {
-    if (!this.coordPair) {
-      throw new Error('Coordinator keypair not initialised yet');
-    }
-    return this.coordPair.sign(message);
+    return this.faucetPair.address;
   }
 
   /**
-   * Public accessor for the singleton ApiPromise. Used by `IndexerService`
-   * to scan blocks on the same connection rather than opening a second one.
+   * Public accessor for the singleton ApiPromise. Used by the ring
+   * indexer to scan blocks on the same connection rather than opening
+   * a second one.
    */
   getApiConnection(): Promise<ApiPromise> {
     return this.getApi();
@@ -95,23 +92,22 @@ export class SubtensorService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Send `balances.transferKeepAlive(to, amount)` from the coord keypair.
+   * Send `balances.transferKeepAlive(to, amount)` from the faucet keypair.
    * Resolves with the hash of the block the extrinsic landed in.
    *
-   * `transferKeepAlive` refuses to sweep the sender's account below the
-   * existential deposit, which is exactly what we want for a long-lived
-   * faucet account.
+   * `transferKeepAlive` refuses to sweep the sender below existential
+   * deposit, which is what we want for a long-lived faucet account.
    */
   async fundAddress(to: string, amountRao: bigint): Promise<string> {
     const api = await this.getApi();
-    if (!this.coordPair) {
-      throw new Error('Coordinator keypair not initialised yet');
+    if (!this.faucetPair) {
+      throw new Error('Faucet keypair not initialised yet');
     }
     const tx = api.tx.balances.transferKeepAlive(to, amountRao);
 
     return new Promise<string>((resolve, reject) => {
       let unsub: (() => void) | null = null;
-      tx.signAndSend(this.coordPair!, (result) => {
+      tx.signAndSend(this.faucetPair!, (result) => {
         const { status, dispatchError } = result;
         if (dispatchError) {
           unsub?.();
@@ -127,7 +123,7 @@ export class SubtensorService implements OnModuleInit, OnModuleDestroy {
               );
               return;
             } catch {
-              this.logger.error('Error decoding transfer error:');
+              this.logger.error('Error decoding transfer error');
             }
           }
           reject(new Error(dispatchError.toString()));

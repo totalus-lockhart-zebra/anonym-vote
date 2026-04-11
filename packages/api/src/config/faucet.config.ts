@@ -1,18 +1,27 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 
 /**
- * Runtime configuration for the faucet.
+ * Runtime configuration for the v2 faucet.
  *
- * Sourced entirely from environment variables. Missing required values
- * are fatal — we'd rather crash at boot than sign credentials against a
- * misconfigured coordinator key.
+ * In v1 this held a coordinator mnemonic + HMAC secret and used them to
+ * sign eligibility credentials. In v2 the faucet holds neither of those —
+ * it is a trust-minimized service whose only job is to send a single TAO
+ * transfer to any requester who can produce a valid ring signature over
+ * the announced voting keys. There are no secrets beyond the faucet
+ * mnemonic itself (which just pays gas, like any Polkadot wallet).
+ *
+ * Every field is sourced from env vars. Missing required values are
+ * fatal — we'd rather crash at boot than accept drip requests against a
+ * misconfigured faucet.
  */
 export interface ProposalConfig {
   readonly id: string;
-  readonly title: string;
-  readonly description: string;
-  readonly deadline: string;
-  readonly quorum: number;
+  /**
+   * First block scanned for announce remarks. There is no end
+   * block — voting is open-ended, late voters are explicitly
+   * supported, and per-proposal isolation is achieved by setting a
+   * fresh `startBlock` for each new proposal.
+   */
   readonly startBlock: number;
 }
 
@@ -21,12 +30,10 @@ export class FaucetConfig implements OnModuleInit {
   private readonly logger = new Logger(FaucetConfig.name);
 
   readonly subtensorWs: string;
-  readonly coordMnemonic: string;
-  readonly coordHmacSecret: string;
+  readonly faucetMnemonic: string;
   readonly allowedVoters: readonly string[];
   readonly proposal: ProposalConfig;
   readonly fundAmountRao: bigint;
-  readonly minStealthBalanceRao: bigint;
   readonly port: number;
   readonly corsOrigins: string[];
 
@@ -38,19 +45,8 @@ export class FaucetConfig implements OnModuleInit {
     this.subtensorWs =
       process.env.SUBTENSOR_WS ?? 'wss://test.finney.opentensor.ai:443';
 
-    this.coordMnemonic = required('COORD_MNEMONIC');
-    this.coordHmacSecret = required('COORD_HMAC_SECRET');
+    this.faucetMnemonic = required('FAUCET_MNEMONIC');
 
-    const deadline = required('PROPOSAL_DEADLINE');
-    if (Number.isNaN(Date.parse(deadline))) {
-      throw new Error(
-        `PROPOSAL_DEADLINE must be a valid ISO date string, got "${deadline}"`,
-      );
-    }
-    const quorum = Number(required('PROPOSAL_QUORUM'));
-    if (!Number.isInteger(quorum) || quorum < 0) {
-      throw new Error('PROPOSAL_QUORUM must be a non-negative integer');
-    }
     const startBlock = Number(required('PROPOSAL_START_BLOCK'));
     if (!Number.isInteger(startBlock) || startBlock < 0) {
       throw new Error('PROPOSAL_START_BLOCK must be a non-negative integer');
@@ -58,14 +54,13 @@ export class FaucetConfig implements OnModuleInit {
 
     this.proposal = {
       id: required('PROPOSAL_ID'),
-      title: required('PROPOSAL_TITLE'),
-      description: required('PROPOSAL_DESCRIPTION'),
-      deadline,
-      quorum,
       startBlock,
     };
 
-    // Comma-separated SS58 addresses. Must match the list shown in the UI.
+    // Comma-separated SS58 addresses. Must exactly match the UI's
+    // proposal.ts — the ring reconstruction on both sides has to agree
+    // byte-for-byte, otherwise sigs verified on the client fail on the
+    // server.
     const votersEnv = required('ALLOWED_VOTERS');
     this.allowedVoters = votersEnv
       .split(',')
@@ -76,9 +71,6 @@ export class FaucetConfig implements OnModuleInit {
     }
 
     this.fundAmountRao = BigInt(process.env.FUND_AMOUNT_RAO ?? '200000');
-    this.minStealthBalanceRao = BigInt(
-      process.env.MIN_STEALTH_BALANCE_RAO ?? '100000',
-    );
 
     this.port = Number(process.env.PORT ?? 3000);
 
@@ -89,15 +81,12 @@ export class FaucetConfig implements OnModuleInit {
   }
 
   onModuleInit() {
-    this.logger.log(`Subtensor WS:        ${this.subtensorWs}`);
-    this.logger.log(`Proposal id:         ${this.proposal.id}`);
-    this.logger.log(`Proposal deadline:   ${this.proposal.deadline}`);
-    this.logger.log(`Proposal quorum:     ${this.proposal.quorum}`);
-    this.logger.log(`Proposal startBlock: ${this.proposal.startBlock}`);
-    this.logger.log(`Allowed voters:      ${this.allowedVoters.length}`);
-    this.logger.log(`Fund amount:         ${this.fundAmountRao} rao`);
-    this.logger.log(`Min stealth balance: ${this.minStealthBalanceRao} rao`);
-    this.logger.log(`CORS origins:        ${this.corsOrigins.join(', ')}`);
+    this.logger.log(`Subtensor WS:             ${this.subtensorWs}`);
+    this.logger.log(`Proposal id:              ${this.proposal.id}`);
+    this.logger.log(`Start block:              ${this.proposal.startBlock}`);
+    this.logger.log(`Allowed voters:           ${this.allowedVoters.length}`);
+    this.logger.log(`Fund amount:              ${this.fundAmountRao} rao`);
+    this.logger.log(`CORS origins:             ${this.corsOrigins.join(', ')}`);
   }
 }
 

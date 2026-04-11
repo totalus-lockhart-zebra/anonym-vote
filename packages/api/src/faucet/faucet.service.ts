@@ -1,160 +1,202 @@
 import {
   BadRequestException,
-  ForbiddenException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { u8aToHex } from '@polkadot/util';
-import {
-  decodeAddress,
-  encodeAddress,
-  cryptoWaitReady,
-} from '@polkadot/util-crypto';
-import { FaucetConfig, ProposalConfig } from '../config/faucet.config';
-import {
-  computeNullifier,
-  credentialMessage,
-  fundRequestMessage,
-  verifyWalletSignature,
-} from './crypto.util';
-import { FundRequestDto } from './dto/fund-request.dto';
+import { decodeAddress } from '@polkadot/util-crypto';
+import { FaucetConfig } from '../config/faucet.config';
+import { DripRequestDto } from './drip-request.dto';
+import { RingIndexerService } from './ring-indexer.service';
+import { verifyRingSig } from './ring-sig-verifier';
+import { dripMessageHex } from '@anon-vote/shared';
 import { SubtensorService } from './subtensor.service';
 
-export interface CredentialResponse {
-  proposalId: string;
-  stealthAddress: string;
-  nullifier: string;
-  credSig: string;
+export interface DripResponse {
+  /** Block hash the transfer landed in. */
+  blockHash: string;
+  /** The gas address that was funded — echoed for client clarity. */
+  gasAddress: string;
 }
 
+export interface FaucetInfo {
+  faucetAddress: string;
+  proposalId: string;
+  startBlock: number;
+  scannedThrough: number;
+  head: number;
+  announcedVoterCount: number;
+  /**
+   * Approximate remaining budget in rao —
+   * `fundAmountRao * (allowedVoters - drippedCount)`, floored at
+   * zero. Clients can show this as transparency; the real
+   * enforcement is in `processDrip`.
+   */
+  remainingBudgetRao: string;
+}
+
+/**
+ * Trust-minimized drip flow.
+ *
+ * `processDrip` is the entire HTTP-facing surface that voters touch.
+ * Steps:
+ *
+ *   1. Sanity-check the proposal id and address format.
+ *   2. Reconstruct the ring at the caller's `ringBlock`. The
+ *      indexer must have already scanned through that block;
+ *      otherwise we'd be verifying against a half-formed snapshot.
+ *   3. Verify the BLSAG ring signature against that ring + the
+ *      drip-message bytes. A valid sig proves "some ring member
+ *      authorized this drip" — it does not say which.
+ *   4. Dedup by `sig.key_image`. BLSAG key images are deterministic
+ *      per secret key, so the same voter cannot pull a second drip
+ *      under a different `gasAddress`.
+ *   5. Budget cap: never transfer more than
+ *      `fundAmountRao * allowedVoters` over the lifetime of the
+ *      service, even if dedup is corrupted.
+ *   6. `balances.transferKeepAlive` from the faucet mnemonic.
+ *
+ * The key image set is in-memory by design — see design notes.
+ */
 @Injectable()
 export class FaucetService {
   private readonly logger = new Logger(FaucetService.name);
-  private readonly allowedNormalised: Set<string>;
+
+  /** Key images we've already dripped for. In-memory by design. */
+  private readonly usedKeyImages = new Set<string>();
+  /** Running total of rao sent out, capped by the per-proposal budget. */
+  private spentRao = 0n;
 
   constructor(
     private readonly config: FaucetConfig,
     private readonly subtensor: SubtensorService,
-  ) {
-    this.allowedNormalised = new Set(
-      config.allowedVoters.map((a) => FaucetService.normaliseAddress(a)),
-    );
-  }
+    private readonly ringIndexer: RingIndexerService,
+  ) {}
 
-  /**
-   * Process a fund+credential request. Does:
-   *   1. Validate SS58 addresses
-   *   2. Check proposal id matches the active one
-   *   3. Check real voter is in the allowlist
-   *   4. Verify the wallet signature over fundRequestMessage
-   *   5. Fund stealth address if below min balance
-   *   6. Issue coordinator-signed credential
-   */
-  async issueCredential(req: FundRequestDto): Promise<CredentialResponse> {
-    await cryptoWaitReady();
-
-    // 1. SS58 sanity — decode throws if the shape is wrong.
-    this.mustDecodeAddress(req.stealthAddress, 'stealthAddress');
-    const realRaw = this.mustDecodeAddress(req.realAddress, 'realAddress');
-
-    // 2. Proposal id
+  async processDrip(req: DripRequestDto): Promise<DripResponse> {
+    // 1. Proposal id must match — the faucet is proposal-scoped
+    //    and can't be used for anything else.
     if (req.proposalId !== this.config.proposalId) {
       throw new BadRequestException(
         `proposalId mismatch: expected "${this.config.proposalId}"`,
       );
     }
 
-    // 3. Allowlist
-    const realNormalised = encodeAddress(realRaw, 42);
-    if (!this.allowedNormalised.has(realNormalised)) {
-      throw new ForbiddenException('realAddress is not an allowed voter');
-    }
-
-    // 4. Wallet signature — bind real voter to stealth address
-    const msg = fundRequestMessage(req.proposalId, req.stealthAddress);
-    if (!verifyWalletSignature(msg, req.realSignature, req.realAddress)) {
-      throw new ForbiddenException('realSignature did not verify');
-    }
-
-    // 5. Fund the stealth address if it doesn't have enough
-    let balance: bigint;
     try {
-      balance = await this.subtensor.getFreeBalance(req.stealthAddress);
+      decodeAddress(req.gasAddress);
+    } catch {
+      throw new BadRequestException('gasAddress is not a valid SS58 address');
+    }
+
+    // 2. ringBlock bounds. Must be at or after startBlock and at
+    //    or before what we've actually scanned. Anything in the
+    //    future means the voter is using a head we haven't caught
+    //    up to yet — we ask them to retry.
+    if (req.ringBlock < this.config.proposal.startBlock) {
+      throw new BadRequestException(
+        `ringBlock ${req.ringBlock} is before proposal startBlock ${this.config.proposal.startBlock}`,
+      );
+    }
+    if (req.ringBlock > this.ringIndexer.getScannedThrough()) {
+      throw new ServiceUnavailableException(
+        `Indexer has not yet caught up to ringBlock ${req.ringBlock} (current: ${this.ringIndexer.getScannedThrough()}). Retry shortly.`,
+      );
+    }
+
+    // 3. Reconstruct the ring exactly as the voter saw it at sign
+    //    time, using the same shared logic that runs in the browser.
+    const ring = this.ringIndexer.getRingAt(req.ringBlock);
+    if (!ring) {
+      // Should not happen given the bounds check above; defensive.
+      throw new ServiceUnavailableException(
+        'Ring reconstruction failed unexpectedly.',
+      );
+    }
+    if (ring.length < 2) {
+      throw new BadRequestException(
+        `Ring at block ${req.ringBlock} has only ${ring.length} member(s); need at least 2 announces before voting.`,
+      );
+    }
+
+    // 4. Ring-sig verification. The voter signed
+    //    `drip:<proposalId>:<gasAddress>:<ringBlock>` against this
+    //    same ring; we recompute the bytes and verify.
+    const msgHex = dripMessageHex(
+      req.proposalId,
+      req.gasAddress,
+      req.ringBlock,
+    );
+    const ok = verifyRingSig(req.ringSig, ring, msgHex);
+    if (!ok) {
+      this.logger.warn(
+        `drip rejected: sig verify failed (ring=${ring.length}, rb=${req.ringBlock})`,
+      );
+      throw new BadRequestException('Ring signature did not verify.');
+    }
+
+    // 5. Dedup. BLSAG key images are deterministic per sk, so the
+    //    same voter asking twice lands on the same key image even
+    //    if they switched gas addresses or ringBlocks.
+    const keyImage = req.ringSig.key_image.toLowerCase();
+    if (this.usedKeyImages.has(keyImage)) {
+      throw new ConflictException(
+        'This voter has already received a drip for this proposal.',
+      );
+    }
+
+    // 6. Budget ceiling. Even if dedup state is corrupted we can't
+    //    spend more than `fundAmountRao * allowedVoters` total.
+    //    Using allowedVoters (not current ring size) makes the
+    //    cap stable as the ring grows.
+    const maxBudget =
+      this.config.fundAmountRao * BigInt(this.config.allowedVoters.length);
+    if (this.spentRao + this.config.fundAmountRao > maxBudget) {
+      throw new HttpException(
+        'Faucet budget for this proposal is exhausted.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    // 7. Pre-reserve before issuing the transfer so concurrent
+    //    requests can't double-spend the cap. Roll back on failure.
+    this.spentRao += this.config.fundAmountRao;
+    this.usedKeyImages.add(keyImage);
+
+    try {
+      this.logger.log(
+        `drip: gas=${req.gasAddress} ring=${ring.length} ` +
+          `rb=${req.ringBlock} keyImage=${keyImage.slice(0, 12)}…`,
+      );
+      const blockHash = await this.subtensor.fundAddress(
+        req.gasAddress,
+        this.config.fundAmountRao,
+      );
+      return { blockHash, gasAddress: req.gasAddress };
     } catch (err) {
-      this.logger.error(`Failed to read stealth balance: ${errMsg(err)}`);
-      throw new ServiceUnavailableException('Subtensor RPC unavailable');
-    }
-
-    if (balance < this.config.minStealthBalanceRao) {
-      this.logger.log(
-        `Funding ${req.stealthAddress} with ${this.config.fundAmountRao} rao ` +
-          `(current balance ${balance})`,
+      this.spentRao -= this.config.fundAmountRao;
+      this.usedKeyImages.delete(keyImage);
+      this.logger.error(
+        `drip transfer failed: ${err instanceof Error ? err.message : String(err)}`,
       );
-      try {
-        const blockHash = await this.subtensor.fundAddress(
-          req.stealthAddress,
-          this.config.fundAmountRao,
-        );
-        this.logger.log(`Funding landed in ${blockHash}`);
-      } catch (err) {
-        this.logger.error(`Funding transfer failed: ${errMsg(err)}`);
-        throw new ServiceUnavailableException('Funding transfer failed');
-      }
-    } else {
-      this.logger.log(
-        `Skipping funding — ${req.stealthAddress} already has ${balance} rao`,
-      );
+      throw new ServiceUnavailableException('Transfer failed; try again.');
     }
+  }
 
-    // 6. Sign the credential. Note the nullifier is a function of the REAL
-    // address, not the stealth one — that's how we deduplicate across
-    // faucet restarts and cross-tab voting.
-    const nullifier = computeNullifier(
-      this.config.coordHmacSecret,
-      req.proposalId,
-      realNormalised,
-    );
-    const credMsg = credentialMessage(
-      req.proposalId,
-      req.stealthAddress,
-      nullifier,
-    );
-    const credSig = this.subtensor.signWithCoord(credMsg);
-
+  getInfo(): FaucetInfo {
+    const totalAllowed = this.config.allowedVoters.length;
+    const maxBudget = this.config.fundAmountRao * BigInt(totalAllowed);
+    const remaining = maxBudget > this.spentRao ? maxBudget - this.spentRao : 0n;
     return {
-      proposalId: req.proposalId,
-      stealthAddress: req.stealthAddress,
-      nullifier,
-      credSig: u8aToHex(credSig),
+      faucetAddress: this.subtensor.getFaucetAddress(),
+      proposalId: this.config.proposalId,
+      startBlock: this.config.proposal.startBlock,
+      scannedThrough: this.ringIndexer.getScannedThrough(),
+      head: this.ringIndexer.getHead(),
+      announcedVoterCount: this.ringIndexer.getAnnouncedVoterCount(),
+      remainingBudgetRao: remaining.toString(),
     };
   }
-
-  getCoordAddress(): string {
-    return this.subtensor.getCoordAddress();
-  }
-
-  getAllowedVoters(): string[] {
-    return [...this.config.allowedVoters];
-  }
-
-  getProposal(): ProposalConfig {
-    return this.config.proposal;
-  }
-
-  private mustDecodeAddress(addr: string, field: string): Uint8Array {
-    try {
-      return decodeAddress(addr);
-    } catch {
-      throw new BadRequestException(`${field} is not a valid SS58 address`);
-    }
-  }
-
-  private static normaliseAddress(addr: string): string {
-    return encodeAddress(decodeAddress(addr), 42);
-  }
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

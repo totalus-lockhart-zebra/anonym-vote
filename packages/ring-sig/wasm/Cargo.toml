@@ -1,0 +1,22 @@
+[package]
+name = "ring-sig-wasm"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+stp-crypto = { path = "../vendored/blsag", default-features = false, features = ["std", "signing"] }
+curve25519-dalek = { version = "4", default-features = false, features = ["alloc", "rand_core"] }
+# Pinned: 0.2.118+ requires rustc 1.86; we are on 1.84.1.
+# When we bump rustc we can lift this pin.
+wasm-bindgen = "=0.2.100"
+# `js` feature routes getrandom through `crypto.getRandomValues` in browsers
+# and Node — required for OsRng to work under wasm32-unknown-unknown.
+getrandom = { version = "0.2", features = ["js"] }
+rand = "0.8"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"

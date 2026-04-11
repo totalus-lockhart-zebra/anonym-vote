@@ -30,106 +30,127 @@ export default function HowItWorksModal({ open, onClose }: Props) {
           <h2 id="hiw-title" className="hiw-title">
             How anonymous voting works
           </h2>
-          <button
-            className="hiw-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
+          <button className="hiw-close" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
 
         <div className="hiw-body">
           <p className="hiw-lead">
-            Your real wallet proves you're eligible. A throwaway{' '}
-            <em>stealth</em> wallet casts the vote. Nothing on-chain links the
-            two — but anyone can still verify the tally.
+            Click a choice. Approve one wallet popup. Wait ~30 seconds.
+            Done. The on-chain payload proves <em>some</em> ring member
+            voted <em>this choice</em> — without revealing which one.
           </p>
 
           <ol className="hiw-steps">
             <li>
               <div className="hiw-step-num">1</div>
               <div>
-                <strong>Stealth keypair</strong>
+                <strong>Generate a voting key</strong>
                 <p>
-                  Your browser generates a fresh sr25519 keypair (the{' '}
-                  <em>stealth address</em>) and keeps it only in{' '}
-                  <code>sessionStorage</code>. It has never touched the chain.
+                  Your browser generates a fresh Ristretto255 keypair
+                  and saves the secret half in <code>localStorage</code>.
+                  The public half is the only thing that ever leaves
+                  the browser. A new key is generated for each
+                  proposal — no cross-proposal linkability.
                 </p>
               </div>
             </li>
             <li>
               <div className="hiw-step-num">2</div>
               <div>
-                <strong>Request funding from the faucet</strong>
+                <strong>Announce the voting key on chain</strong>
                 <p>
-                  Your <em>real</em> Polkadot wallet signs a message{' '}
-                  <code>anon-vote-fund:v1:&lt;proposal&gt;:&lt;stealth&gt;</code>
-                  . Note: your choice (yes/no/abstain) is <em>not</em> in this
-                  signature — only a binding to the stealth address.
+                  Your real Polkadot wallet signs a{' '}
+                  <code>system.remark</code> of the form{' '}
+                  <code>
+                    anon-vote-v2:announce:&lt;proposal&gt;:&lt;vkPub&gt;
+                  </code>
+                  . This is the only moment your real wallet
+                  participates. It publishes your public voting key
+                  for this proposal — not your choice.
                 </p>
               </div>
             </li>
             <li>
               <div className="hiw-step-num">3</div>
               <div>
-                <strong>Faucet issues an anonymous credential</strong>
+                <strong>Reconstruct the canonical ring</strong>
                 <p>
-                  The faucet checks the allowlist, verifies your wallet
-                  signature, and:
-                </p>
-                <ul className="hiw-sublist">
-                  <li>sends a small amount of rao to your stealth address;</li>
-                  <li>
-                    computes a deterministic{' '}
-                    <strong>nullifier</strong> ={' '}
-                    <code>HMAC-SHA256(secret, proposalId ‖ realAddress)</code>;
-                  </li>
-                  <li>
-                    signs a credential{' '}
-                    <code>
-                      anon-vote-cred:v1:&lt;proposal&gt;:&lt;stealth&gt;:&lt;nullifier&gt;
-                    </code>{' '}
-                    with the coordinator key.
-                  </li>
-                </ul>
-                <p>
-                  The real address is never stored next to the nullifier.
+                  Your browser scans the chain for all valid announce
+                  remarks since the proposal started, and assembles
+                  them into a deterministically-sorted list — the{' '}
+                  <strong>ring</strong>. Every observer (UI, faucet,
+                  late verifier) reconstructs the same ring at the
+                  same block number, so signatures stay valid forever.
                 </p>
               </div>
             </li>
             <li>
               <div className="hiw-step-num">4</div>
               <div>
-                <strong>Cast the vote from the stealth wallet</strong>
+                <strong>Ring-sign a drip request</strong>
                 <p>
-                  The stealth wallet submits a{' '}
-                  <code>system.remark</code> extrinsic whose body is the
-                  credential plus the choice. The extrinsic is signed by the
-                  stealth key — there is no on-chain trace of your real wallet.
+                  Your browser generates a fresh sr25519 <em>gas
+                  wallet</em> and ring-signs the message{' '}
+                  <code>
+                    drip:&lt;proposal&gt;:&lt;gas&gt;:&lt;ringBlock&gt;
+                  </code>{' '}
+                  with your voting key secret. The faucet verifies
+                  the signature, dedupes by the <strong>key
+                  image</strong> (a deterministic unlinkable
+                  nullifier), and transfers TAO to the gas wallet.
                 </p>
               </div>
             </li>
             <li>
               <div className="hiw-step-num">5</div>
               <div>
+                <strong>Ring-sign the vote, publish via gas wallet</strong>
+                <p>
+                  Your browser ring-signs{' '}
+                  <code>
+                    vote:&lt;proposal&gt;:&lt;choice&gt;:&lt;ringBlock&gt;
+                  </code>{' '}
+                  with the same voting key (same key image, different
+                  message). Then it submits{' '}
+                  <code>system.remark(...)</code> signed by the GAS
+                  wallet — a throwaway address unrelated to your real
+                  account.
+                </p>
+              </div>
+            </li>
+            <li>
+              <div className="hiw-step-num">6</div>
+              <div>
                 <strong>Anyone can verify the tally</strong>
                 <p>
-                  The UI scans all remarks and, for each, checks that the
-                  extrinsic signer matches the declared stealth address, the
-                  coordinator signature is valid, and the nullifier hasn't been
-                  seen before (one vote per voter). The result is a publicly
-                  verifiable count — with no way to tell who voted for what.
+                  Anyone with a chain RPC scans the vote remarks,
+                  reconstructs the ring at each vote's embedded
+                  ringBlock, verifies the ring signature against
+                  that ring, drops second-and-later remarks with the
+                  same key image, and aggregates the choices. The
+                  result is a publicly verifiable count — with no
+                  way to tell who voted for what.
                 </p>
               </div>
             </li>
           </ol>
 
           <div className="hiw-caveat">
-            <strong>Trust note.</strong> Anonymity relies on the coordinator
-            not retaining a <code>realAddress → nullifier</code> mapping on
-            its side. Against the public chain and the UI, unlinkability is
-            cryptographic.
+            <strong>Trust note.</strong> Anonymity rests on the BLSAG
+            ring signature primitive. The faucet cannot link drips
+            to real voters because the drip request carries only a
+            ring signature and a fresh gas address — neither tied to
+            your real wallet. The faucet can refuse service
+            (censorship) but cannot forge or de-anonymize.
+            <br /><br />
+            <strong>Anonymity caveat.</strong> The ring grows as more
+            voters join. The very first voter has the smallest
+            anonymity set; later voters get progressively larger
+            rings. The UI shows the current ring size before you
+            click — wait for a few others to join if you want
+            stronger anonymity.
           </div>
         </div>
       </div>

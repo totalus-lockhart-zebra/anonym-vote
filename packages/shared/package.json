@@ -1,0 +1,31 @@
+{
+  "name": "@anon-vote/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure types and functions shared between the browser UI and the faucet API.",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/cjs/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/cjs/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "npm run clean && npm run build:cjs && npm run build:esm && npm run build:esm-pkg",
+    "build:cjs": "tsc -p tsconfig.build.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:esm-pkg": "node scripts/write-esm-pkg.mjs",
+    "clean": "rm -rf dist",
+    "check-format": "prettier --check \"src/**/*.ts\""
+  },
+  "devDependencies": {
+    "prettier": "^3.2.5",
+    "typescript": "^5.2.2"
+  }
+}

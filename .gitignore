@@ -3,3 +3,7 @@ dist
 .env
 .env.local
 .idea
+packages/ring-sig/target
+packages/ring-sig/wasm/pkg
+packages/ring-sig/wasm/pkg-bundler
+packages/shared/dist

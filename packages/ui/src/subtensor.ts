@@ -77,6 +77,6 @@ export async function waitForBalance(
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   throw new Error(
-    `Timed out waiting for stealth address ${address} to be funded.`,
+    `Timed out waiting for gas address ${address} to be funded.`,
   );
 }

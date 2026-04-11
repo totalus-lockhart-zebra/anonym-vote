@@ -1,13 +1,22 @@
-import type { Tally } from '../crypto';
-import type { IndexedRemark, Proposal } from '../faucet';
+/**
+ * ResultsScreen — live ring-signature tally.
+ *
+ * No /faucet/votes endpoint, no deadline, no quorum. Everything
+ * comes from the in-browser indexer and is tallied locally via
+ * `tallyRemarks` with WASM verification. Each accepted-vote row
+ * shows the block hash, the extrinsic signer (a throwaway gas
+ * address, not the voter's real account), and the key image — the
+ * only stable per-voter identifier observers can see. Key images
+ * prove "same voter wrote these two remarks" but cannot be inverted
+ * to find the real voter.
+ */
+
+import type { ProposalConfig } from '../proposal';
+import type { IndexerSnapshot } from '../hooks/useIndexer';
+import type { RingState } from '../hooks/useRing';
+import type { AcceptedVote, Tally } from '@anon-vote/shared';
 import { SUBTENSOR_WS } from '../config';
 
-/**
- * Build a polkadot.js Apps explorer link for a given block hash, using
- * the same Subtensor WS endpoint the UI is configured to talk to. The
- * `rpc` query parameter is intentionally NOT URL-encoded — that's the
- * shape polkadot.js apps expects (e.g. the public link in the README).
- */
 function explorerLink(blockHash: string): string {
   return `https://polkadot.js.org/apps/?rpc=${SUBTENSOR_WS}#/explorer/query/${blockHash}`;
 }
@@ -17,9 +26,9 @@ function shortHash(h: string): string {
   return h.length > 14 ? `${h.slice(0, 10)}…${h.slice(-6)}` : h;
 }
 
-function shortAddr(a: string): string {
-  if (!a) return '';
-  return a.length > 14 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
+function shortHex(h: string): string {
+  if (!h) return '';
+  return h.length > 14 ? `${h.slice(0, 8)}…${h.slice(-6)}` : h;
 }
 
 function Bar({
@@ -49,109 +58,88 @@ function Bar({
   );
 }
 
-interface Props {
-  tally: Tally | null;
-  loading: boolean;
-  refreshing: boolean;
-  error: string | null;
-  progress: { scanned: number; total: number };
-  refresh: () => void;
-  isPastDeadline: boolean;
-  voters: string[];
-  proposal: Proposal;
-  indexedRemarks: IndexedRemark[];
-  indexerStatus: 'indexing' | 'ready' | null;
+export interface ResultsScreenProps {
+  indexer: IndexerSnapshot;
+  ring: RingState;
+  tally: Tally;
+  votes: AcceptedVote[];
+  config: ProposalConfig;
 }
 
 export default function ResultsScreen({
+  indexer,
+  ring,
   tally,
-  loading,
-  refreshing,
-  error,
-  progress,
-  refresh,
-  isPastDeadline,
-  voters,
-  proposal,
-  indexedRemarks,
-  indexerStatus,
-}: Props) {
-  if (loading && !tally) {
-    const pct =
-      progress.total > 0
-        ? Math.min(100, Math.round((progress.scanned / progress.total) * 100))
-        : 0;
-    return (
-      <div className="vs-status">
-        <div className="vs-spinner" />
-        <p>Backend is indexing subtensor blocks…</p>
-        {progress.total > 0 && (
-          <small>
-            {progress.scanned.toLocaleString()} /{' '}
-            {progress.total.toLocaleString()} blocks ({pct}%)
-          </small>
-        )}
-      </div>
-    );
+  votes,
+  config,
+}: ResultsScreenProps) {
+  const counted = tally.yes + tally.no + tally.abstain;
+
+  // Map key image → block hash so the remark list can deep-link to
+  // each accepted vote. We only keep the first occurrence per key
+  // image, matching the tally's "first wins" behavior.
+  const indexedByKeyImage = new Map<string, number>();
+  for (const v of votes) {
+    if (!indexedByKeyImage.has(v.sig.key_image)) {
+      indexedByKeyImage.set(v.sig.key_image, v.blockNumber);
+    }
+  }
+  const blockHashByNumber = new Map<number, string>();
+  for (const r of indexer.remarks) {
+    blockHashByNumber.set(r.blockNumber, r.blockHash);
   }
 
-  if (error) {
-    return (
-      <div className="vs-error">
-        <p>Failed to load: {error}</p>
-        <button className="vs-btn-ghost" onClick={refresh}>
-          Retry
-        </button>
-      </div>
-    );
+  let outcome: string;
+  if (counted === 0) {
+    outcome = 'Pending';
+  } else if (tally.yes > tally.no) {
+    outcome = 'Passing ✓';
+  } else if (tally.no > tally.yes) {
+    outcome = 'Failing ✗';
+  } else {
+    outcome = 'Tied';
   }
 
-  const t: Tally = tally ?? {
-    yes: 0,
-    no: 0,
-    abstain: 0,
-    invalid: 0,
-    totalVoted: 0,
-  };
-  const counted = t.yes + t.no + t.abstain;
-  const quorum = proposal.quorum;
-  const quorumMet = t.totalVoted >= quorum;
-
-  let outcome = 'Pending';
-  if (counted > 0) {
-    if (!quorumMet) outcome = 'No quorum';
-    else if (t.yes > t.no) outcome = 'Passed ✓';
-    else if (t.no > t.yes) outcome = 'Rejected ✗';
-    else outcome = 'Tied';
-  }
-
-  const indexerPct =
-    progress.total > 0
-      ? Math.min(100, Math.round((progress.scanned / progress.total) * 100))
+  const scanProgressPct =
+    indexer.head !== null && indexer.head > config.startBlock
+      ? Math.min(
+          100,
+          Math.round(
+            ((indexer.scannedThrough - config.startBlock + 1) /
+              (indexer.head - config.startBlock + 1)) *
+              100,
+          ),
+        )
       : 0;
 
   return (
     <div className="res-root">
-      {indexerStatus === 'indexing' && (
+      {indexer.status === 'indexing' && (
         <div className="res-indexing">
           <div className="res-indexing-row">
             <div className="vs-spinner" style={{ width: 18, height: 18 }} />
             <div>
-              <strong>Backend is indexing chain…</strong>
+              <strong>Scanning chain…</strong>
               <p>
-                {indexedRemarks.length > 0
-                  ? `${indexedRemarks.length} remark(s) indexed so far — the tally below updates live as new blocks land.`
-                  : 'No vote remarks indexed yet — the tally below will fill in as blocks are processed.'}
+                {indexer.remarks.length > 0
+                  ? `${indexer.remarks.length} remark(s) seen so far — the tally updates live as new blocks land.`
+                  : 'No remarks seen yet — the tally will fill in as blocks are processed.'}
               </p>
             </div>
-            <span className="res-indexing-pct">{indexerPct}%</span>
+            <span className="res-indexing-pct">{scanProgressPct}%</span>
           </div>
           <div className="res-progress-track">
             <div
               className="res-progress-fill"
-              style={{ width: `${indexerPct}%` }}
+              style={{ width: `${scanProgressPct}%` }}
             />
           </div>
+        </div>
+      )}
+
+      {indexer.error && (
+        <div className="vs-error">
+          <p>Indexer error: {indexer.error}</p>
         </div>
       )}
 
@@ -159,26 +147,20 @@ export default function ResultsScreen({
         <div className="res-metric">
           <div className="res-metric-label">Voted</div>
           <div className="res-metric-value">
-            {t.totalVoted}
-            <span className="res-metric-denom">/{voters.length}</span>
+            {tally.totalVoted}
+            <span className="res-metric-denom">/{ring.ring.length}</span>
           </div>
         </div>
         <div className="res-metric">
-          <div className="res-metric-label">Quorum</div>
-          <div
-            className="res-metric-value"
-            style={{ color: quorumMet ? '#22c55e' : 'inherit' }}
-          >
-            {quorum}
-            <span className="res-metric-denom"> req.</span>
-          </div>
+          <div className="res-metric-label">Ring size</div>
+          <div className="res-metric-value">{ring.ring.length}</div>
         </div>
         <div className="res-metric">
           <div className="res-metric-label">Invalid</div>
-          <div className="res-metric-value">{t.invalid}</div>
+          <div className="res-metric-value">{tally.invalid}</div>
         </div>
         <div className="res-metric">
-          <div className="res-metric-label">Outcome</div>
+          <div className="res-metric-label">Status</div>
           <div className="res-metric-value" style={{ fontSize: '1rem' }}>
             {outcome}
           </div>
@@ -187,61 +169,70 @@ export default function ResultsScreen({
 
       <div className="res-card">
         <div className="res-card-title">Vote distribution</div>
-        <Bar label="Yes" count={t.yes} total={counted} color="#22c55e" />
-        <Bar label="No" count={t.no} total={counted} color="#ef4444" />
+        <Bar label="Yes" count={tally.yes} total={counted} color="#22c55e" />
+        <Bar label="No" count={tally.no} total={counted} color="#ef4444" />
         <Bar
           label="Abstain"
-          count={t.abstain}
+          count={tally.abstain}
           total={counted}
           color="#f59e0b"
         />
-        {t.invalid > 0 && (
+        {tally.invalid > 0 && (
           <div className="res-invalid">
-            {t.invalid} remark(s) failed credential verification — not counted.
+            {tally.invalid} remark(s) failed ring-signature verification —
+            not counted.
           </div>
         )}
-        {!isPastDeadline && (
-          <div
-            style={{
-              fontSize: '12px',
-              color: 'var(--text3)',
-              marginTop: '12px',
-            }}
-          >
-            Voting is still open. Results update as new remarks land on chain.
-          </div>
-        )}
+        <div
+          style={{
+            fontSize: '12px',
+            color: 'var(--text3)',
+            marginTop: '12px',
+          }}
+        >
+          Voting is open-ended in v2 — late voters are explicitly supported,
+          so this tally keeps updating.
+        </div>
       </div>
 
-      {indexedRemarks.length > 0 && (
+      {votes.length > 0 && (
         <div className="res-card">
-          <div className="res-card-title">
-            Indexed remark blocks ({indexedRemarks.length})
-          </div>
+          <div className="res-card-title">Accepted votes ({votes.length})</div>
           <p className="res-blocks-hint">
-            Every <code>system.remark</code> the backend has indexed since
-            block <code>{progress.total > 0 ? `#${proposal.startBlock}` : '…'}</code>.
-            Click any block hash to open it in the polkadot.js explorer and
-            verify the extrinsic for yourself.
+            Each row is a ring-signed <code>system.remark</code>. The{' '}
+            <em>key image</em> is the stable per-voter identifier used for
+            dedup; different key images mean different voters, but nothing
+            in the row reveals which allowlisted account that voter is.
           </p>
           <div className="res-blocks">
-            {indexedRemarks.map((r) => (
-              <a
-                key={`${r.blockNumber}-${r.blockHash}`}
-                className="res-block-row"
-                href={explorerLink(r.blockHash)}
-                target="_blank"
-                rel="noreferrer"
-                title="Open on polkadot.js Apps"
-              >
-                <span className="res-block-num">#{r.blockNumber}</span>
-                <span className="res-block-hash">{shortHash(r.blockHash)}</span>
-                <span className="res-block-signer">
-                  {shortAddr(r.signer)}
-                </span>
-                <span className="res-block-arrow">↗</span>
-              </a>
-            ))}
+            {votes.map((v) => {
+              const blockHash = blockHashByNumber.get(v.blockNumber) ?? '';
+              return (
+                <a
+                  key={v.sig.key_image}
+                  className="res-block-row"
+                  href={blockHash ? explorerLink(blockHash) : '#'}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open on polkadot.js Apps"
+                >
+                  <span className="res-block-num">#{v.blockNumber}</span>
+                  <span className="res-block-hash">
+                    {blockHash ? shortHash(blockHash) : '…'}
+                  </span>
+                  <span
+                    className="res-block-signer"
+                    style={{ color: `var(--${v.c})` }}
+                  >
+                    {v.c}
+                  </span>
+                  <span className="res-block-signer" title={v.sig.key_image}>
+                    ki {shortHex(v.sig.key_image)}
+                  </span>
+                  <span className="res-block-arrow">↗</span>
+                </a>
+              );
+            })}
           </div>
         </div>
       )}
@@ -249,22 +240,15 @@ export default function ResultsScreen({
       <div className="res-privacy">
         <div className="res-privacy-title">Privacy guarantee</div>
         <p>
-          Each vote is a <code>system.remark</code> extrinsic signed by a
-          one-shot stealth sr25519 account generated in the voter's browser.
-          Eligibility is proved by a coordinator signature over the stealth
-          address — never by the voter's real wallet. On-chain data contains no
-          link between real voters and their choices, and tallying does not
-          require that link either.
+          Each vote is signed by a BLSAG ring signature over the announced
+          voting keys. The key image acts as a nullifier, so the same
+          voter cannot be counted twice — but observers cannot invert a
+          key image to find out which ring member it belongs to.
+          Extrinsics are published from throwaway gas wallets, so the
+          on-chain payer is not the voter's real identity either. No
+          coordinator is trusted at any step.
         </p>
       </div>
-
-      <button
-        className="vs-btn-ghost res-refresh"
-        onClick={refresh}
-        disabled={refreshing}
-      >
-        {refreshing ? '↻ Refreshing…' : '↻ Refresh'}
-      </button>
     </div>
   );
 }

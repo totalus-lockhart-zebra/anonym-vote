@@ -1,0 +1,31 @@
+[package]
+name = "stp-crypto"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Vendored BLSAG ring signatures over Ristretto255 (opentensor/subtensor)."
+
+[dependencies]
+blake2 = { version = "0.10", default-features = false }
+curve25519-dalek = { version = "4", default-features = false, features = [
+    "alloc",
+    "digest",
+    "rand_core",
+    "zeroize",
+] }
+digest = { version = "0.10", default-features = false }
+rand_core = { version = "0.6", default-features = false, optional = true }
+zeroize = { version = "1", default-features = false, optional = true }
+
+[dev-dependencies]
+rand = "0.8"
+
+[features]
+default = ["std", "signing"]
+std = [
+    "blake2/std",
+    "digest/std",
+    "rand_core?/std",
+]
+# Enables sign() and generate_key_image(). Not needed for verify-only consumers.
+signing = ["rand_core", "zeroize"]
