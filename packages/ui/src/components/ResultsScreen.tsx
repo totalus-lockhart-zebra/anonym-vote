@@ -14,11 +14,7 @@
 import type { ProposalConfig } from '../proposal';
 import type { IndexerSnapshot } from '../hooks/useIndexer';
 import type { RingState } from '../hooks/useRing';
-import type {
-  AcceptedVote,
-  InvalidVoteEntry,
-  Tally,
-} from '@anon-vote/shared';
+import type { AcceptedVote, InvalidVoteEntry, Tally } from '@anon-vote/shared';
 import { SUBTENSOR_WS } from '../config';
 
 function explorerLink(blockHash: string): string {
@@ -154,14 +150,18 @@ export default function ResultsScreen({
           <div className="res-metric-label">Voted</div>
           <div className="res-metric-value">
             {tally.totalVoted}
-            <span className="res-metric-denom">/{config.allowedVoters.length}</span>
+            <span className="res-metric-denom">
+              /{config.allowedVoters.length}
+            </span>
           </div>
         </div>
         <div className="res-metric">
           <div className="res-metric-label">Registered</div>
           <div className="res-metric-value">
             {ring.ring.length}
-            <span className="res-metric-denom">/{config.allowedVoters.length}</span>
+            <span className="res-metric-denom">
+              /{config.allowedVoters.length}
+            </span>
           </div>
         </div>
         <div className="res-metric">
@@ -223,8 +223,8 @@ export default function ResultsScreen({
             marginTop: '12px',
           }}
         >
-          Voting is open-ended in v2 — late voters are explicitly supported,
-          so this tally keeps updating.
+          Voting is open-ended in v2 — late voters are explicitly supported, so
+          this tally keeps updating.
         </div>
       </div>
 
@@ -234,8 +234,8 @@ export default function ResultsScreen({
           <p className="res-blocks-hint">
             Each row is a ring-signed <code>system.remark</code>. The{' '}
             <em>key image</em> is the stable per-voter identifier used for
-            dedup; different key images mean different voters, but nothing
-            in the row reveals which allowlisted account that voter is.
+            dedup; different key images mean different voters, but nothing in
+            the row reveals which allowlisted account that voter is.
           </p>
           <div className="res-blocks">
             {votes.map((v) => {
@@ -269,19 +269,6 @@ export default function ResultsScreen({
           </div>
         </div>
       )}
-
-      <div className="res-privacy">
-        <div className="res-privacy-title">Privacy guarantee</div>
-        <p>
-          Each vote is signed by a BLSAG ring signature over the announced
-          voting keys. The key image acts as a nullifier, so the same
-          voter cannot be counted twice — but observers cannot invert a
-          key image to find out which ring member it belongs to.
-          Extrinsics are published from throwaway gas wallets, so the
-          on-chain payer is not the voter's real identity either. No
-          coordinator is trusted at any step.
-        </p>
-      </div>
     </div>
   );
 }
