@@ -259,9 +259,6 @@ export default function ResultsScreen({
                   >
                     {v.c}
                   </span>
-                  <span className="res-block-signer" title={v.sig.key_image}>
-                    ki {shortHex(v.sig.key_image)}
-                  </span>
                   <span className="res-block-arrow">↗</span>
                 </a>
               );
