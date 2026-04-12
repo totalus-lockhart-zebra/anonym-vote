@@ -49,15 +49,13 @@ export default function ParticipantsScreen({
       <div className="res-privacy" style={{ marginTop: '1.5rem' }}>
         <div className="res-privacy-title">What's public vs private</div>
         <p>
-          <strong>Public:</strong> the list of eligible voters, every
-          announced voting key, and every vote remark published on
-          chain.
+          <strong>Public:</strong> the list of eligible voters, every announced
+          voting key, and every vote remark published on chain.
           <br />
-          <strong>Private:</strong> which ring member signed a given
-          vote. Each vote is ring-signed by a voting key the voter
-          announced earlier, then published by a throwaway gas wallet
-          that is unrelated to their real account. On-chain data never
-          links a choice back to a real voter.
+          <strong>Private:</strong> which ring member signed a given vote. Each
+          vote is ring-signed by a voting key the voter announced earlier, then
+          published by a throwaway gas wallet that is unrelated to their real
+          account. On-chain data never links a choice back to a real voter.
         </p>
       </div>
     </div>

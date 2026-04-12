@@ -16,10 +16,7 @@
  */
 
 import { useMemo } from 'react';
-import {
-  findVotingStartBlock,
-  type RemarkLike,
-} from '@anon-vote/shared';
+import { findVotingStartBlock, type RemarkLike } from '@anon-vote/shared';
 import type { ProposalConfig } from '../proposal';
 
 export type Phase = 'announce' | 'voting';

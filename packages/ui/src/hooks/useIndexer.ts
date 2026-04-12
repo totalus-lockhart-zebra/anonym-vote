@@ -103,22 +103,17 @@ export function useIndexer(config: ProposalConfig): IndexerSnapshot {
       const run = (async () => {
         try {
           if (!api) return;
-          const { remarks, scannedThrough } = await scanRemarks(
-            api,
-            from,
-            to,
-            {
-              concurrency: 8,
-              signal: abort.signal,
-              onProgress: (st) => {
-                scannedThroughRef.current = Math.max(
-                  scannedThroughRef.current,
-                  st,
-                );
-                updateSnapshot();
-              },
+          const { remarks, scannedThrough } = await scanRemarks(api, from, to, {
+            concurrency: 8,
+            signal: abort.signal,
+            onProgress: (st) => {
+              scannedThroughRef.current = Math.max(
+                scannedThroughRef.current,
+                st,
+              );
+              updateSnapshot();
             },
-          );
+          });
           if (abort.signal.aborted) return;
           remarksRef.current = [...remarksRef.current, ...remarks];
           scannedThroughRef.current = Math.max(
@@ -150,7 +145,9 @@ export function useIndexer(config: ProposalConfig): IndexerSnapshot {
       const head = headRef.current;
       const scanned = scannedThroughRef.current;
       const status: IndexerSnapshot['status'] =
-        head !== null && head - scanned <= READY_LAG_BLOCKS ? 'ready' : 'indexing';
+        head !== null && head - scanned <= READY_LAG_BLOCKS
+          ? 'ready'
+          : 'indexing';
       setSnapshot({
         status,
         startBlock: config.startBlock,

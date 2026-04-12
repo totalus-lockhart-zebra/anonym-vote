@@ -188,7 +188,8 @@ export class FaucetService {
   getInfo(): FaucetInfo {
     const totalAllowed = this.config.allowedVoters.length;
     const maxBudget = this.config.fundAmountRao * BigInt(totalAllowed);
-    const remaining = maxBudget > this.spentRao ? maxBudget - this.spentRao : 0n;
+    const remaining =
+      maxBudget > this.spentRao ? maxBudget - this.spentRao : 0n;
     return {
       faucetAddress: this.subtensor.getFaucetAddress(),
       proposalId: this.config.proposalId,

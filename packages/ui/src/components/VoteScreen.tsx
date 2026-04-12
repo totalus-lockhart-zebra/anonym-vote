@@ -40,7 +40,11 @@ import {
   voteMessageHex,
 } from '@anon-vote/shared';
 import { getOrCreateVotingKey, peekVotingKey } from '../voting-key';
-import { getOrCreateGasWallet, clearGasWallet, type GasWallet } from '../gas-wallet';
+import {
+  getOrCreateGasWallet,
+  clearGasWallet,
+  type GasWallet,
+} from '../gas-wallet';
 import { getApi, sendRemark, waitForBalance } from '../subtensor';
 import { keyImage as wasmKeyImage, sign as ringSign } from '../ring-sig';
 import { requestDrip, type DripError } from '../faucet-drip';
@@ -168,7 +172,9 @@ export default function VoteScreen({
       );
 
       setStep('waiting-for-announce');
-      setStatusMsg(`Waiting for indexer to observe announce (block ${announceBlock})…`);
+      setStatusMsg(
+        `Waiting for indexer to observe announce (block ${announceBlock})…`,
+      );
       await waitUntil(() => {
         const snap = indexerRef.current;
         return snap.scannedThrough >= announceBlock;
@@ -214,7 +220,9 @@ export default function VoteScreen({
         );
 
         setStep('waiting-for-announce');
-        setStatusMsg(`Waiting for indexer to observe announce (block ${announceBlock})…`);
+        setStatusMsg(
+          `Waiting for indexer to observe announce (block ${announceBlock})…`,
+        );
         // We need the indexer to actually have the announce in its
         // remark list, not just to have advanced its head past it.
         // `scannedThrough` is the strictly correct guarantee — it
@@ -287,7 +295,9 @@ export default function VoteScreen({
           // Same voter already got a drip — usually means a
           // previous attempt funded `g` and we just need to wait
           // for it to land. Fall through to the gas-fund poll.
-          setStatusMsg('Faucet says you already have a drip — checking gas balance…');
+          setStatusMsg(
+            'Faucet says you already have a drip — checking gas balance…',
+          );
         } else if (
           !err?.kind ||
           err.kind === 'network' ||
@@ -395,7 +405,9 @@ export default function VoteScreen({
   // it, and the UI should treat that as "needs to register again".
   const localVk = realAddress ? peekVotingKey(PROPOSAL.id, realAddress) : null;
   const isRegistered =
-    ring.myAnnouncedVk !== null && localVk !== null && localVk.pk === ring.myAnnouncedVk;
+    ring.myAnnouncedVk !== null &&
+    localVk !== null &&
+    localVk.pk === ring.myAnnouncedVk;
 
   // Map voter state to which dot in the timeline is active.
   // For non-eligible viewers (no wallet / wrong wallet), the
@@ -448,9 +460,9 @@ export default function VoteScreen({
           <div className="vs-already-icon">✓</div>
           <h3>Vote already counted</h3>
           <p>
-            A vote with your voting key's key image is already on chain
-            and accepted by the tally. Further submissions are silently
-            dropped by the nullifier check.
+            A vote with your voting key's key image is already on chain and
+            accepted by the tally. Further submissions are silently dropped by
+            the nullifier check.
           </p>
         </div>
       )}
@@ -488,47 +500,50 @@ export default function VoteScreen({
             <h3>Registered</h3>
             <p>
               Your voting key is on chain. {ring.announcedVoterCount} of{' '}
-              {PROPOSAL.allowedVoters.length} allowlisted voters have
-              registered so far. Voting opens once the coordinator publishes
-              the start remark — this page will switch to choice buttons
-              automatically when that happens.
+              {PROPOSAL.allowedVoters.length} allowlisted voters have registered
+              so far. Voting opens once the coordinator publishes the start
+              remark — this page will switch to choice buttons automatically
+              when that happens.
             </p>
           </div>
         )}
 
-      {step === 'pick' && canAct && !alreadyVoted && phase.phase === 'voting' && (
-        <>
-          <div className="vs-choices">
-            {CHOICES.map((c) => (
-              <button
-                key={c.id}
-                className="vs-choice"
-                style={{ '--accent': c.color } as React.CSSProperties}
-                onClick={() => cast(c.id)}
-              >
-                <span className="vs-choice-label">{c.label}</span>
-                <span className="vs-choice-sub">{c.sub}</span>
-              </button>
-            ))}
-          </div>
-          <div className="vs-tlock-note">
-            <span className="vs-tlock-icon">🕶</span>
-            <span>
-              {isRegistered
-                ? `You're registered. Click a choice — no wallet popup needed. Ring size ${ring.ring.length} of ${PROPOSAL.allowedVoters.length}.`
-                : `You haven't registered yet. Clicking a choice will publish a registration via your wallet (one extension popup), then immediately ring-sign and publish your vote.`}
-            </span>
-          </div>
-        </>
-      )}
+      {step === 'pick' &&
+        canAct &&
+        !alreadyVoted &&
+        phase.phase === 'voting' && (
+          <>
+            <div className="vs-choices">
+              {CHOICES.map((c) => (
+                <button
+                  key={c.id}
+                  className="vs-choice"
+                  style={{ '--accent': c.color } as React.CSSProperties}
+                  onClick={() => cast(c.id)}
+                >
+                  <span className="vs-choice-label">{c.label}</span>
+                  <span className="vs-choice-sub">{c.sub}</span>
+                </button>
+              ))}
+            </div>
+            <div className="vs-tlock-note">
+              <span className="vs-tlock-icon">🕶</span>
+              <span>
+                {isRegistered
+                  ? `You're registered. Click a choice — no wallet popup needed. Ring size ${ring.ring.length} of ${PROPOSAL.allowedVoters.length}.`
+                  : `You haven't registered yet. Clicking a choice will publish a registration via your wallet (one extension popup), then immediately ring-sign and publish your vote.`}
+              </span>
+            </div>
+          </>
+        )}
 
       {step === 'registered' && (
         <div className="vs-already">
           <div className="vs-already-icon">✓</div>
           <h3>Registered</h3>
           <p>
-            Your voting key is now on chain. Voting opens once the
-            coordinator publishes the start remark.
+            Your voting key is now on chain. Voting opens once the coordinator
+            publishes the start remark.
           </p>
         </div>
       )}
@@ -539,8 +554,8 @@ export default function VoteScreen({
           <p>{statusMsg || 'Publishing announce…'}</p>
           <small>
             Your real wallet is signing a one-time registration for this
-            proposal. The signature contains only your voting public key,
-            not your choice.
+            proposal. The signature contains only your voting public key, not
+            your choice.
           </small>
         </div>
       )}
@@ -599,10 +614,9 @@ export default function VoteScreen({
           <div className="vs-done-icon">✓</div>
           <h3>Vote submitted</h3>
           <p>
-            Your choice <strong>{selected?.toUpperCase()}</strong> is on
-            chain. Extrinsic signer is a throwaway gas address; the ring
-            signature inside proves some ring member voted, without
-            revealing which.
+            Your choice <strong>{selected?.toUpperCase()}</strong> is on chain.
+            Extrinsic signer is a throwaway gas address; the ring signature
+            inside proves some ring member voted, without revealing which.
           </p>
           {blockHash && (
             <div className="vs-tlock-note" style={{ wordBreak: 'break-all' }}>
@@ -738,10 +752,7 @@ function Timeline({
  * interval. Times out after `timeoutMs`. Used to wait for the
  * local indexer to catch up to a block we just published into.
  */
-function waitUntil(
-  predicate: () => boolean,
-  timeoutMs: number,
-): Promise<void> {
+function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
     if (predicate()) {
       resolve();

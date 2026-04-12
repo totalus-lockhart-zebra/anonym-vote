@@ -20,11 +20,7 @@ import type { RingSignature } from './drip-request.dto';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const wasm = require('../../../ring-sig/wasm/pkg/ring_sig_wasm.js') as {
-  verify_js: (
-    sig: unknown,
-    ring: string[],
-    messageHex: string,
-  ) => boolean;
+  verify_js: (sig: unknown, ring: string[], messageHex: string) => boolean;
 };
 
 export function verifyRingSig(

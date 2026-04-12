@@ -76,7 +76,5 @@ export async function waitForBalance(
     if (free >= minRao) return free;
     await new Promise((r) => setTimeout(r, intervalMs));
   }
-  throw new Error(
-    `Timed out waiting for gas address ${address} to be funded.`,
-  );
+  throw new Error(`Timed out waiting for gas address ${address} to be funded.`);
 }

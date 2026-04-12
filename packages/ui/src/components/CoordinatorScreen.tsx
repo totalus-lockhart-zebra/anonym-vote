@@ -42,8 +42,7 @@ export default function CoordinatorScreen({
 
   const realAddress: string | null = wallet?.address ?? null;
   const coordAddr = PROPOSAL.coordinatorAddress;
-  const isCoordinator =
-    coordAddr.length > 0 && realAddress === coordAddr;
+  const isCoordinator = coordAddr.length > 0 && realAddress === coordAddr;
 
   async function publishStart(): Promise<void> {
     if (!realAddress || !isCoordinator) return;
@@ -106,8 +105,8 @@ export default function CoordinatorScreen({
           <p className="vs-pdesc">
             The coordinator's start remark landed in block{' '}
             <code>{phase.startBlock}</code>. There is nothing more for the
-            coordinator to do — voters can now publish ring-signed votes
-            from any browser tab pointed at this UI.
+            coordinator to do — voters can now publish ring-signed votes from
+            any browser tab pointed at this UI.
           </p>
         </div>
         <div className="vs-done">
@@ -129,9 +128,8 @@ export default function CoordinatorScreen({
           <strong>Coordinator address is not configured.</strong>
           <p>
             Set <code>coordinatorAddress</code> in{' '}
-            <code>packages/ui/src/proposal.ts</code> to the SS58 of the
-            wallet that should publish the start remark, then rebuild the
-            UI.
+            <code>packages/ui/src/proposal.ts</code> to the SS58 of the wallet
+            that should publish the start remark, then rebuild the UI.
           </p>
         </div>
       </div>
@@ -150,10 +148,9 @@ export default function CoordinatorScreen({
           </div>
           <h2 className="vs-ptitle">Coordinator action required</h2>
           <p className="vs-pdesc">
-            Voting is currently in the <strong>announce</strong> phase.
-            The coordinator can open voting by publishing a start remark
-            from their wallet. Connect the coordinator wallet to access
-            this action.
+            Voting is currently in the <strong>announce</strong> phase. The
+            coordinator can open voting by publishing a start remark from their
+            wallet. Connect the coordinator wallet to access this action.
           </p>
         </div>
         <div className="vs-tlock-note">
@@ -187,9 +184,9 @@ export default function CoordinatorScreen({
           <span className="vs-tlock-icon">🔑</span>
           <span>
             Coordinator is{' '}
-            <code style={{ wordBreak: 'break-all' }}>{coordAddr}</code>.
-            Switch to that wallet in your Polkadot extension to publish
-            the start signal.
+            <code style={{ wordBreak: 'break-all' }}>{coordAddr}</code>. Switch
+            to that wallet in your Polkadot extension to publish the start
+            signal.
           </span>
         </div>
       </div>
@@ -207,10 +204,10 @@ export default function CoordinatorScreen({
         </div>
         <h2 className="vs-ptitle">Open voting</h2>
         <p className="vs-pdesc">
-          Click below to publish a <code>system.remark</code> from your
-          wallet that flips the proposal from announce phase to voting
-          phase. After this remark lands in a block, every voter who has
-          registered will be able to cast their vote with one click.
+          Click below to publish a <code>system.remark</code> from your wallet
+          that flips the proposal from announce phase to voting phase. After
+          this remark lands in a block, every voter who has registered will be
+          able to cast their vote with one click.
         </p>
       </div>
 
@@ -218,17 +215,16 @@ export default function CoordinatorScreen({
         <div className="vs-tlock-explain-title">What this does</div>
         <ol className="vs-steps">
           <li>
-            Builds the text{' '}
-            <code>anon-vote-v2:start:{PROPOSAL.id}</code>.
+            Builds the text <code>anon-vote-v2:start:{PROPOSAL.id}</code>.
           </li>
           <li>
-            Asks your wallet to sign a <code>system.remark</code>{' '}
-            extrinsic carrying that text. (One extension popup.)
+            Asks your wallet to sign a <code>system.remark</code> extrinsic
+            carrying that text. (One extension popup.)
           </li>
           <li>
-            Submits the extrinsic to chain. As soon as it lands in a
-            block, every voter's UI will pick it up via the head
-            subscription and switch to the voting phase automatically.
+            Submits the extrinsic to chain. As soon as it lands in a block,
+            every voter's UI will pick it up via the head subscription and
+            switch to the voting phase automatically.
           </li>
         </ol>
       </div>
@@ -247,8 +243,7 @@ export default function CoordinatorScreen({
           <p>Approve the start remark in your wallet extension…</p>
           <small>
             You'll be signing{' '}
-            <code>system.remark("anon-vote-v2:start:{PROPOSAL.id}")</code>
-            .
+            <code>system.remark("anon-vote-v2:start:{PROPOSAL.id}")</code>.
           </small>
         </div>
       )}
@@ -258,10 +253,10 @@ export default function CoordinatorScreen({
           <div className="vs-done-icon">✓</div>
           <h3>Voting is now open</h3>
           <p>
-            Start remark landed in block <code>{publishedBlock}</code>.
-            Voters who have registered can now cast their votes; the UI
-            in their browsers will switch to the voting phase on the
-            next chain head tick (a few seconds).
+            Start remark landed in block <code>{publishedBlock}</code>. Voters
+            who have registered can now cast their votes; the UI in their
+            browsers will switch to the voting phase on the next chain head tick
+            (a few seconds).
           </p>
         </div>
       )}

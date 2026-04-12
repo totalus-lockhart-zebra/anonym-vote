@@ -63,7 +63,10 @@ export function getOrCreateVotingKey(
     pk: fresh.pk,
     createdAt: new Date().toISOString(),
   };
-  localStorage.setItem(storageKey(proposalId, realAddress), JSON.stringify(stored));
+  localStorage.setItem(
+    storageKey(proposalId, realAddress),
+    JSON.stringify(stored),
+  );
   return fresh;
 }
 

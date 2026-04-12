@@ -64,7 +64,13 @@ export async function getFaucetInfo(): Promise<FaucetInfo> {
 export interface DripError extends Error {
   status: number;
   /** Short tag for the UI to branch on without parsing the message string. */
-  kind: 'network' | 'bad-request' | 'conflict' | 'ring-not-ready' | 'budget' | 'server';
+  kind:
+    | 'network'
+    | 'bad-request'
+    | 'conflict'
+    | 'ring-not-ready'
+    | 'budget'
+    | 'server';
 }
 
 function mkError(status: number, message: string): DripError {
@@ -111,7 +117,10 @@ export async function requestDrip(args: {
     throw mkError(res.status, text || res.statusText);
   }
   const body = (await res.json()) as Partial<DripResponse>;
-  if (typeof body?.blockHash !== 'string' || typeof body?.gasAddress !== 'string') {
+  if (
+    typeof body?.blockHash !== 'string' ||
+    typeof body?.gasAddress !== 'string'
+  ) {
     throw mkError(res.status, 'Faucet returned a malformed drip response');
   }
   return body as DripResponse;

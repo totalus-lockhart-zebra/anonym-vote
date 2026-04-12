@@ -72,7 +72,9 @@ describe('announce remark', () => {
 
   it('rejects non-hex vkPub', () => {
     expect(() => encodeAnnounceRemark(PROPOSAL, 'not-hex')).toThrow();
-    expect(parseAnnounceRemark(`anon-vote-v2:announce:${PROPOSAL}:zz`)).toBeNull();
+    expect(
+      parseAnnounceRemark(`anon-vote-v2:announce:${PROPOSAL}:zz`),
+    ).toBeNull();
   });
 
   it('rejects proposalId containing colon', () => {
@@ -127,7 +129,13 @@ describe('vote remark', () => {
   });
 
   it('rejects v != 2', () => {
-    const text = JSON.stringify({ v: 1, p: PROPOSAL, c: 'yes', rb: 1, sig: fakeSig });
+    const text = JSON.stringify({
+      v: 1,
+      p: PROPOSAL,
+      c: 'yes',
+      rb: 1,
+      sig: fakeSig,
+    });
     expect(parseVoteRemark(text)).toBeNull();
   });
 
@@ -144,7 +152,9 @@ describe('vote remark', () => {
 
   it('rejects missing or non-integer ringBlock', () => {
     expect(
-      parseVoteRemark(JSON.stringify({ v: 2, p: PROPOSAL, c: 'yes', sig: fakeSig })),
+      parseVoteRemark(
+        JSON.stringify({ v: 2, p: PROPOSAL, c: 'yes', sig: fakeSig }),
+      ),
     ).toBeNull();
     expect(
       parseVoteRemark(
@@ -165,7 +175,13 @@ describe('vote remark', () => {
 
   it('rejects malformed sig fields', () => {
     const bad = { ...fakeSig, key_image: 'too-short' };
-    const text = JSON.stringify({ v: 2, p: PROPOSAL, c: 'yes', rb: 1, sig: bad });
+    const text = JSON.stringify({
+      v: 2,
+      p: PROPOSAL,
+      c: 'yes',
+      rb: 1,
+      sig: bad,
+    });
     expect(parseVoteRemark(text)).toBeNull();
   });
 });
@@ -176,7 +192,9 @@ describe('vote remark', () => {
 
 describe('voteMessageHex / dripMessageHex', () => {
   it('voteMessageHex binds proposal + choice + ringBlock', () => {
-    const expected = Buffer.from(`vote:${PROPOSAL}:yes:42`, 'utf-8').toString('hex');
+    const expected = Buffer.from(`vote:${PROPOSAL}:yes:42`, 'utf-8').toString(
+      'hex',
+    );
     expect(voteMessageHex(PROPOSAL, 'yes', 42)).toBe(expected);
     // Different choice → different bytes
     expect(voteMessageHex(PROPOSAL, 'no', 42)).not.toBe(
@@ -274,7 +292,11 @@ describe('findVotingStartBlock', () => {
 
   it('ignores start remarks for other proposals', () => {
     const remarks: RemarkLike[] = [
-      { blockNumber: 100, signer: COORDINATOR, text: encodeStartRemark('other') },
+      {
+        blockNumber: 100,
+        signer: COORDINATOR,
+        text: encodeStartRemark('other'),
+      },
     ];
     expect(
       findVotingStartBlock(remarks, {
@@ -323,7 +345,11 @@ describe('reconstructRing', () => {
 
   it('produces sorted unique ring from valid announces', () => {
     const ring = reconstructRing(
-      [announce(1, '5Alice', alice), announce(2, '5Bob', bob), announce(3, '5Eve', eve)],
+      [
+        announce(1, '5Alice', alice),
+        announce(2, '5Bob', bob),
+        announce(3, '5Eve', eve),
+      ],
       { proposalId: PROPOSAL },
     );
     expect(ring).toEqual([alice, bob, eve]);
@@ -396,24 +422,21 @@ describe('computeRingAt', () => {
   ];
 
   it('includes only announces at or before atBlock', () => {
-    expect(computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 99 })).toEqual([]);
-    expect(computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 100 })).toEqual([
-      alice,
-    ]);
-    expect(computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 200 })).toEqual([
-      alice,
-      bob,
-    ]);
-    expect(computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 300 })).toEqual([
-      alice,
-      bob,
-      eve,
-    ]);
-    expect(computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 999 })).toEqual([
-      alice,
-      bob,
-      eve,
-    ]);
+    expect(
+      computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 99 }),
+    ).toEqual([]);
+    expect(
+      computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 100 }),
+    ).toEqual([alice]);
+    expect(
+      computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 200 }),
+    ).toEqual([alice, bob]);
+    expect(
+      computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 300 }),
+    ).toEqual([alice, bob, eve]);
+    expect(
+      computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 999 }),
+    ).toEqual([alice, bob, eve]);
   });
 
   it('threading allowedRealAddresses filters out non-allowlist signers', () => {
@@ -440,8 +463,16 @@ describe('tallyRemarks (stub verify)', () => {
   const alice = 'aa'.repeat(32);
   const bob = 'bb'.repeat(32);
   const minimalSetup: RemarkLike[] = [
-    { blockNumber: 1, signer: '5Alice', text: encodeAnnounceRemark(PROPOSAL, alice) },
-    { blockNumber: 2, signer: '5Bob', text: encodeAnnounceRemark(PROPOSAL, bob) },
+    {
+      blockNumber: 1,
+      signer: '5Alice',
+      text: encodeAnnounceRemark(PROPOSAL, alice),
+    },
+    {
+      blockNumber: 2,
+      signer: '5Bob',
+      text: encodeAnnounceRemark(PROPOSAL, bob),
+    },
     { blockNumber: 5, signer: COORDINATOR, text: encodeStartRemark(PROPOSAL) },
   ];
 
@@ -483,16 +514,30 @@ describe('tallyRemarks (stub verify)', () => {
         makeVote(12, 'yes', 'cc'.repeat(32)),
         makeVote(13, 'abstain', 'dd'.repeat(32)),
       ],
-      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
+      {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+        verify: acceptAll,
+      },
     );
-    expect(tally).toEqual({ yes: 2, no: 1, abstain: 1, invalid: 0, totalVoted: 4 });
+    expect(tally).toEqual({
+      yes: 2,
+      no: 1,
+      abstain: 1,
+      invalid: 0,
+      totalVoted: 4,
+    });
   });
 
   it('drops second remark with same key image (first wins)', () => {
     const dup = 'ee'.repeat(32);
     const { tally, votes } = tallyRemarks(
       [...minimalSetup, makeVote(10, 'yes', dup), makeVote(11, 'no', dup)],
-      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
+      {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+        verify: acceptAll,
+      },
     );
     expect(tally.yes).toBe(1);
     expect(tally.no).toBe(0);
@@ -504,7 +549,11 @@ describe('tallyRemarks (stub verify)', () => {
   it('counts invalid signatures separately, not in totalVoted', () => {
     const { tally } = tallyRemarks(
       [...minimalSetup, makeVote(10, 'yes', 'aa'.repeat(32))],
-      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: rejectAll },
+      {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+        verify: rejectAll,
+      },
     );
     expect(tally.invalid).toBe(1);
     expect(tally.totalVoted).toBe(0);
@@ -514,7 +563,11 @@ describe('tallyRemarks (stub verify)', () => {
     // ringBlock=0 → no announces seen → ring size 0 → invalid.
     const { tally } = tallyRemarks(
       [...minimalSetup, makeVote(10, 'yes', 'aa'.repeat(32), 0)],
-      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
+      {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+        verify: acceptAll,
+      },
     );
     expect(tally.invalid).toBe(1);
     expect(tally.totalVoted).toBe(0);
@@ -529,7 +582,11 @@ describe('tallyRemarks (stub verify)', () => {
     });
     const { tally } = tallyRemarks(
       [...minimalSetup, { blockNumber: 10, signer: '5x', text: otherText }],
-      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
+      {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+        verify: acceptAll,
+      },
     );
     expect(tally.totalVoted).toBe(0);
     expect(tally.invalid).toBe(0);
@@ -541,7 +598,11 @@ describe('tallyRemarks (stub verify)', () => {
     };
     const { tally } = tallyRemarks(
       [...minimalSetup, makeVote(10, 'yes', 'aa'.repeat(32))],
-      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: throwing },
+      {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+        verify: throwing,
+      },
     );
     expect(tally.invalid).toBe(1);
   });
@@ -553,7 +614,11 @@ describe('tallyRemarks (stub verify)', () => {
     // is "post-start" by chain consensus.
     const { tally } = tallyRemarks(
       [...minimalSetup, makeVote(5, 'yes', 'aa'.repeat(32))],
-      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
+      {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+        verify: acceptAll,
+      },
     );
     expect(tally.invalid).toBe(0);
     expect(tally.totalVoted).toBe(1);
@@ -564,7 +629,11 @@ describe('tallyRemarks (stub verify)', () => {
     // Vote at block 3 < start at block 5 → invalid.
     const { tally, invalidReasons } = tallyRemarks(
       [...minimalSetup, makeVote(3, 'yes', 'aa'.repeat(32))],
-      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
+      {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+        verify: acceptAll,
+      },
     );
     expect(tally.invalid).toBe(1);
     expect(tally.totalVoted).toBe(0);
@@ -575,12 +644,24 @@ describe('tallyRemarks (stub verify)', () => {
   it('rejects all votes as invalid when the start remark is missing entirely', () => {
     // Same setup but without the coordinator's start remark.
     const noStartSetup: RemarkLike[] = [
-      { blockNumber: 1, signer: '5Alice', text: encodeAnnounceRemark(PROPOSAL, alice) },
-      { blockNumber: 2, signer: '5Bob', text: encodeAnnounceRemark(PROPOSAL, bob) },
+      {
+        blockNumber: 1,
+        signer: '5Alice',
+        text: encodeAnnounceRemark(PROPOSAL, alice),
+      },
+      {
+        blockNumber: 2,
+        signer: '5Bob',
+        text: encodeAnnounceRemark(PROPOSAL, bob),
+      },
     ];
     const { tally, votingStartBlock, invalidReasons } = tallyRemarks(
       [...noStartSetup, makeVote(10, 'yes', 'aa'.repeat(32))],
-      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: acceptAll },
+      {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+        verify: acceptAll,
+      },
     );
     expect(votingStartBlock).toBeNull();
     expect(tally.invalid).toBe(1);
@@ -604,10 +685,26 @@ describe('end-to-end with real BLSAG', () => {
     const bob = realKeygen();
     const eve = realKeygen();
     const announces: RemarkLike[] = [
-      { blockNumber: 10, signer: '5Alice', text: encodeAnnounceRemark(PROPOSAL, alice.pk) },
-      { blockNumber: 20, signer: '5Bob', text: encodeAnnounceRemark(PROPOSAL, bob.pk) },
-      { blockNumber: 30, signer: '5Eve', text: encodeAnnounceRemark(PROPOSAL, eve.pk) },
-      { blockNumber: 35, signer: COORDINATOR, text: encodeStartRemark(PROPOSAL) },
+      {
+        blockNumber: 10,
+        signer: '5Alice',
+        text: encodeAnnounceRemark(PROPOSAL, alice.pk),
+      },
+      {
+        blockNumber: 20,
+        signer: '5Bob',
+        text: encodeAnnounceRemark(PROPOSAL, bob.pk),
+      },
+      {
+        blockNumber: 30,
+        signer: '5Eve',
+        text: encodeAnnounceRemark(PROPOSAL, eve.pk),
+      },
+      {
+        blockNumber: 35,
+        signer: COORDINATOR,
+        text: encodeStartRemark(PROPOSAL),
+      },
     ];
     const ringBlock = 30;
     const ring = computeRingAt(announces, {
@@ -616,7 +713,11 @@ describe('end-to-end with real BLSAG', () => {
     });
     expect(ring).toHaveLength(3);
 
-    const sig = realSign(alice.sk, ring, voteMessageHex(PROPOSAL, 'yes', ringBlock));
+    const sig = realSign(
+      alice.sk,
+      ring,
+      voteMessageHex(PROPOSAL, 'yes', ringBlock),
+    );
     const remarkText = encodeVoteRemark({
       proposalId: PROPOSAL,
       choice: 'yes',
@@ -626,9 +727,19 @@ describe('end-to-end with real BLSAG', () => {
 
     const { tally, votes } = tallyRemarks(
       [...announces, { blockNumber: 42, signer: 'gas-addr', text: remarkText }],
-      { proposalId: PROPOSAL, coordinatorAddress: COORDINATOR, verify: realVerify },
+      {
+        proposalId: PROPOSAL,
+        coordinatorAddress: COORDINATOR,
+        verify: realVerify,
+      },
     );
-    expect(tally).toEqual({ yes: 1, no: 0, abstain: 0, invalid: 0, totalVoted: 1 });
+    expect(tally).toEqual({
+      yes: 1,
+      no: 0,
+      abstain: 0,
+      invalid: 0,
+      totalVoted: 1,
+    });
     expect(votes[0].blockNumber).toBe(42);
     expect(votes[0].rb).toBe(ringBlock);
     expect(votes[0].sig.key_image).toBe(sig.key_image);
@@ -748,7 +859,10 @@ describe('end-to-end with real BLSAG', () => {
     });
 
     // Alice signs at block 20 → ring={Alice, Bob}, sorted.
-    const ringAt20 = computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 20 });
+    const ringAt20 = computeRingAt(remarks, {
+      proposalId: PROPOSAL,
+      atBlock: 20,
+    });
     expect(ringAt20).toHaveLength(2);
     const aliceSig = realSign(
       alice.sk,
@@ -774,9 +888,16 @@ describe('end-to-end with real BLSAG', () => {
     });
 
     // Bob signs at block 30 → ring={Alice, Bob, Eve}.
-    const ringAt30 = computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 30 });
+    const ringAt30 = computeRingAt(remarks, {
+      proposalId: PROPOSAL,
+      atBlock: 30,
+    });
     expect(ringAt30).toHaveLength(3);
-    const bobSig = realSign(bob.sk, ringAt30, voteMessageHex(PROPOSAL, 'no', 30));
+    const bobSig = realSign(
+      bob.sk,
+      ringAt30,
+      voteMessageHex(PROPOSAL, 'no', 30),
+    );
     remarks.push({
       blockNumber: 31,
       signer: 'gas-bob',
@@ -834,7 +955,11 @@ describe('end-to-end with real BLSAG', () => {
     ];
 
     const ring = computeRingAt(remarks, { proposalId: PROPOSAL, atBlock: 20 });
-    const sigYes = realSign(alice.sk, ring, voteMessageHex(PROPOSAL, 'yes', 20));
+    const sigYes = realSign(
+      alice.sk,
+      ring,
+      voteMessageHex(PROPOSAL, 'yes', 20),
+    );
     const sigNo = realSign(alice.sk, ring, voteMessageHex(PROPOSAL, 'no', 20));
     // Same secret key → same key image regardless of message.
     expect(sigNo.key_image).toBe(sigYes.key_image);

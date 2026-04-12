@@ -130,9 +130,7 @@ export async function scanRemarks(
   };
 
   const workerCount = Math.min(concurrency, toBlock - fromBlock + 1);
-  await Promise.all(
-    Array.from({ length: workerCount }, () => worker()),
-  );
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   // A last sweep in case workers finished out-of-order across gaps we
   // couldn't bridge earlier (e.g. transient RPC error retried on a later
