@@ -103,9 +103,17 @@ export function useIndexer(config: ProposalConfig): IndexerSnapshot {
       const run = (async () => {
         try {
           if (!api) return;
-          const { remarks, scannedThrough } = await scanRemarks(api, from, to, {
+          const { scannedThrough } = await scanRemarks(api, from, to, {
             concurrency: 8,
             signal: abort.signal,
+            // Push new remarks into the ref AS they're found so
+            // downstream hooks (tally, ring, phase) see partial
+            // results during a long catch-up. updateSnapshot()
+            // fires on the next onProgress tick (contiguous-
+            // prefix advance) which batches the React update.
+            onRemarks: (found) => {
+              remarksRef.current = [...remarksRef.current, ...found];
+            },
             onProgress: (st) => {
               scannedThroughRef.current = Math.max(
                 scannedThroughRef.current,
@@ -115,7 +123,8 @@ export function useIndexer(config: ProposalConfig): IndexerSnapshot {
             },
           });
           if (abort.signal.aborted) return;
-          remarksRef.current = [...remarksRef.current, ...remarks];
+          // Final flush — in case the last few remarks arrived
+          // after the last onProgress tick.
           scannedThroughRef.current = Math.max(
             scannedThroughRef.current,
             scannedThrough,

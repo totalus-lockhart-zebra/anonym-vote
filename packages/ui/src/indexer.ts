@@ -30,6 +30,14 @@ export interface ScanOptions {
    */
   onProgress?: (scannedThrough: number) => void;
   /**
+   * Fires each time one or more remarks are found in a block. Called
+   * from inside the worker loop, so it may fire from multiple
+   * concurrent workers. The caller can use this to surface partial
+   * results during a long catch-up scan instead of waiting for the
+   * entire range to finish.
+   */
+  onRemarks?: (remarks: IndexedRemark[]) => void;
+  /**
    * If set to `true` at any point, the scanner aborts at the next safe
    * spot and returns whatever it has. Used by the hook to cancel pending
    * work when the component unmounts.
@@ -89,6 +97,7 @@ export async function scanRemarks(
         const signedBlock = await api.rpc.chain.getBlock(hash);
         const exs = signedBlock.block.extrinsics;
 
+        const blockRemarks: IndexedRemark[] = [];
         for (const ex of exs) {
           const { section, method } = ex.method;
           if (section !== 'system' || method !== 'remark') continue;
@@ -107,12 +116,17 @@ export async function scanRemarks(
             continue;
           }
 
-          remarks.push({
+          blockRemarks.push({
             blockNumber: n,
             blockHash: hashHex,
             signer: ex.signer.toString(),
             text,
           });
+        }
+
+        if (blockRemarks.length > 0) {
+          remarks.push(...blockRemarks);
+          opts.onRemarks?.(blockRemarks);
         }
 
         done.add(n);
