@@ -58,7 +58,7 @@ export default function App() {
         <div className="topbar-left">
           <div className="logo">
             <span className="logo-mark">◈</span>
-            <span className="logo-text">TaoVoter</span>
+            <span className="logo-text">τaoVoter</span>
           </div>
           <span className="proposal-chip">{PROPOSAL.id}</span>
           <span
