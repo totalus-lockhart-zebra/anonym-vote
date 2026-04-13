@@ -20,7 +20,7 @@
   --yes: #22c55e;
   --no: #ef4444;
   --abs: #f59e0b;
-  --accent: #7c6ef5;
+  --accent: #560cf5;
   --accent2: #a79fff;
   --font-head: 'Syne', sans-serif;
   --font-mono: 'Space Mono', monospace;
@@ -78,7 +78,17 @@ body {
 .logo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  line-height: 1;
+  background: white;
+  padding: 5px;
+  border-radius: 5px;
+  border: 1px solid var(--text3, #9ca3af);
+}
+.logo svg {
+  height: 12px;
+  width: auto;
+  display: block;
 }
 .logo-mark {
   width: 22px;
@@ -90,9 +100,11 @@ body {
   border-radius: 15%;
 }
 .logo-text {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--accent);
+  line-height: 1;
 }
 .proposal-chip {
   min-width: fit-content;
