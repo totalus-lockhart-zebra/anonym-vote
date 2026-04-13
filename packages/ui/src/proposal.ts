@@ -70,6 +70,6 @@ export const PROPOSAL: ProposalConfig = {
     '5HK5tp6t2S59DywmHRWPBVJeJ86T61KjurYqeooqj8sREpeN',
     '5HmkM6X1D3W3CuCSPuHhrbYyZNBy2aGAiZy9NczoJmtY25H7',
   ],
-  startBlock: 7961726,
+  startBlock: 7962121,
   coordinatorAddress: '5Ff9wuYWk2r8qKutC5NKGBqEVY2rty5JXCBTXz5Tm7ndiWwQ',
 };
