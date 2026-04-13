@@ -119,18 +119,6 @@ export default function App() {
           >
             ⚙
           </button>
-          <button
-            className="theme-toggle"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            aria-label={
-              theme === 'dark'
-                ? 'Switch to light theme'
-                : 'Switch to dark theme'
-            }
-            title={theme === 'dark' ? 'Light theme' : 'Dark theme'}
-          >
-            {theme === 'dark' ? '☀' : '☾'}
-          </button>
           {wallet.status === 'connected' ? (
             <div className="wallet-connected">
               <span
@@ -279,6 +267,8 @@ export default function App() {
         open={rpcModalOpen}
         onClose={() => setRpcModalOpen(false)}
         health={rpcHealth}
+        theme={theme}
+        onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
       />
     </div>
   );

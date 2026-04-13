@@ -43,7 +43,7 @@ export class FaucetConfig implements OnModuleInit {
 
   constructor() {
     this.subtensorWs =
-      process.env.SUBTENSOR_WS ?? 'wss://test.finney.opentensor.ai:443';
+      process.env.SUBTENSOR_WS ?? 'wss://archive-rocksdb.internal.tao.com';
 
     this.faucetMnemonic = required('FAUCET_MNEMONIC');
 

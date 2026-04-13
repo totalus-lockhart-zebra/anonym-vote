@@ -17,7 +17,7 @@ const STORAGE_KEY_WS = 'rpc:subtensor-ws';
 
 export const DEFAULT_SUBTENSOR_WS =
   (import.meta.env.VITE_SUBTENSOR_WS as string | undefined) ??
-  'wss://dev.chain.opentensor.ai:443';
+  'wss://archive-rocksdb.internal.tao.com';
 
 export const EXPECTED_GENESIS_HASH = (
   (import.meta.env.VITE_EXPECTED_GENESIS_HASH as string | undefined) ??

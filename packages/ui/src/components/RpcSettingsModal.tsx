@@ -22,9 +22,17 @@ interface Props {
   open: boolean;
   onClose: () => void;
   health: RpcHealth;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
 }
 
-export default function RpcSettingsModal({ open, onClose, health }: Props) {
+export default function RpcSettingsModal({
+  open,
+  onClose,
+  health,
+  theme,
+  onToggleTheme,
+}: Props) {
   const currentOverride = (() => {
     const active = getSubtensorWs();
     return active === DEFAULT_SUBTENSOR_WS ? '' : active;
@@ -115,7 +123,7 @@ export default function RpcSettingsModal({ open, onClose, health }: Props) {
       >
         <div className="hiw-header">
           <h2 id="rpc-title" className="hiw-title">
-            RPC endpoint
+            Settings
           </h2>
           <button
             className="hiw-close"
@@ -128,6 +136,36 @@ export default function RpcSettingsModal({ open, onClose, health }: Props) {
         </div>
 
         <div className="hiw-body">
+          <div className="rpc-section-title">Appearance</div>
+          <div className="rpc-theme-row">
+            <span className="rpc-label">Theme</span>
+            <div className="rpc-theme-switch">
+              <button
+                className={`rpc-theme-btn ${theme === 'dark' ? 'active' : ''}`}
+                onClick={() => {
+                  if (theme !== 'dark') onToggleTheme();
+                }}
+                disabled={validating}
+                type="button"
+              >
+                ☾ Dark
+              </button>
+              <button
+                className={`rpc-theme-btn ${theme === 'light' ? 'active' : ''}`}
+                onClick={() => {
+                  if (theme !== 'light') onToggleTheme();
+                }}
+                disabled={validating}
+                type="button"
+              >
+                ☀ Light
+              </button>
+            </div>
+          </div>
+
+          <div className="rpc-divider" />
+
+          <div className="rpc-section-title">RPC endpoint</div>
           <div className={`rpc-status rpc-status-${health.status}`}>
             <span className="rpc-status-dot" />
             <strong>{statusLabel[health.status]}</strong>
