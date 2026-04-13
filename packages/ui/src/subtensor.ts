@@ -12,7 +12,7 @@
 
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import type { KeyringPair } from '@polkadot/keyring/types';
-import { SUBTENSOR_WS } from './config';
+import { SUBTENSOR_WS, EXPECTED_GENESIS_HASH } from './config';
 
 let apiPromise: Promise<ApiPromise> | null = null;
 
@@ -22,6 +22,69 @@ export function getApi(): Promise<ApiPromise> {
     apiPromise = ApiPromise.create({ provider });
   }
   return apiPromise;
+}
+
+export interface GenesisCheck {
+  ok: boolean;
+  actual: string;
+  expected: string;
+  wsUrl: string;
+}
+
+/**
+ * Validate a candidate WS URL without touching the process-wide
+ * ApiPromise singleton. Used by the RPC settings modal before it
+ * persists a user override: connect to the candidate, read its
+ * genesis hash, compare to expected, then disconnect.
+ *
+ * Throws on connection failure (unreachable endpoint, handshake
+ * timeout, etc.) — the caller shows the error to the user.
+ */
+export async function validateWs(
+  url: string,
+  { timeoutMs = 10_000 }: { timeoutMs?: number } = {},
+): Promise<GenesisCheck> {
+  const provider = new WsProvider(url, false);
+  let api: ApiPromise | null = null;
+  try {
+    await Promise.race([
+      provider.connect(),
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error(`timeout after ${timeoutMs}ms`)), timeoutMs),
+      ),
+    ]);
+    api = await ApiPromise.create({ provider });
+    const actual = api.genesisHash.toHex().toLowerCase();
+    return {
+      ok: actual === EXPECTED_GENESIS_HASH,
+      actual,
+      expected: EXPECTED_GENESIS_HASH,
+      wsUrl: url,
+    };
+  } finally {
+    try {
+      if (api) await api.disconnect();
+      else await provider.disconnect();
+    } catch {
+      // noop
+    }
+  }
+}
+
+/**
+ * Resolve the API and verify that its genesis hash matches the one
+ * this build was pinned to. Used by the RPC-health hook to gate the
+ * UI on "is the configured RPC actually pointing at the right chain".
+ */
+export async function checkGenesis(): Promise<GenesisCheck> {
+  const api = await getApi();
+  const actual = api.genesisHash.toHex().toLowerCase();
+  return {
+    ok: actual === EXPECTED_GENESIS_HASH,
+    actual,
+    expected: EXPECTED_GENESIS_HASH,
+    wsUrl: SUBTENSOR_WS,
+  };
 }
 
 /**

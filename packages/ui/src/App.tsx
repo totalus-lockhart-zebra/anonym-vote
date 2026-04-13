@@ -26,7 +26,9 @@ import ResultsScreen from './components/ResultsScreen';
 import ParticipantsScreen from './components/ParticipantsScreen';
 import CoordinatorScreen from './components/CoordinatorScreen';
 import HowItWorksModal from './components/HowItWorksModal';
+import RpcSettingsModal from './components/RpcSettingsModal';
 import IndexerStatus from './components/IndexerStatus';
+import { useRpcHealth } from './hooks/useRpcHealth';
 
 const TABS = [
   { id: 'action', label: 'Vote' },
@@ -44,6 +46,8 @@ function shortAddr(addr?: string | null): string {
 export default function App() {
   const [tab, setTab] = useState<TabId>('action');
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
+  const [rpcModalOpen, setRpcModalOpen] = useState(false);
+  const rpcHealth = useRpcHealth();
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'light' || saved === 'dark') return saved;
@@ -104,6 +108,18 @@ export default function App() {
         </div>
         <div className="topbar-right">
           <button
+            className={`theme-toggle rpc-gear rpc-gear-${rpcHealth.status}`}
+            onClick={() => setRpcModalOpen(true)}
+            aria-label="RPC settings"
+            title={
+              rpcHealth.status === 'mismatch'
+                ? 'Wrong chain — click to change RPC'
+                : `RPC: ${rpcHealth.wsUrl}`
+            }
+          >
+            ⚙
+          </button>
+          <button
             className="theme-toggle"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             aria-label={
@@ -156,6 +172,20 @@ export default function App() {
         </div>
       </header>
 
+      {rpcHealth.status === 'mismatch' && (
+        <div className="wallet-error">
+          ⚠ Wrong chain — the configured RPC reports a genesis hash that
+          doesn't match this build. Expected{' '}
+          <code>{rpcHealth.expectedGenesis.slice(0, 14)}…</code>, got{' '}
+          <code>{rpcHealth.actualGenesis?.slice(0, 14) ?? '—'}…</code>.{' '}
+          <button
+            className="wallet-error-link"
+            onClick={() => setRpcModalOpen(true)}
+          >
+            Change RPC
+          </button>
+        </div>
+      )}
       {wallet.error && <div className="wallet-error">{wallet.error}</div>}
       {PROPOSAL.allowedVoters.length === 0 && (
         <div className="wallet-error">
@@ -244,6 +274,11 @@ export default function App() {
       <HowItWorksModal
         open={howItWorksOpen}
         onClose={() => setHowItWorksOpen(false)}
+      />
+      <RpcSettingsModal
+        open={rpcModalOpen}
+        onClose={() => setRpcModalOpen(false)}
+        health={rpcHealth}
       />
     </div>
   );
