@@ -117,7 +117,7 @@ body {
   font-size: 15px;
   font-weight: 800;
   letter-spacing: -0.03em;
-  color: var(--accent);
+  color: var(--text);
   line-height: 1;
 }
 .theme-toggle {
