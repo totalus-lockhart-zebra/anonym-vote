@@ -355,14 +355,29 @@ describe('reconstructRing', () => {
     expect(ring).toEqual([alice, bob, eve]);
   });
 
-  it('keeps the latest announce per real address', () => {
+  it('keeps the first announce per real address (soundness)', () => {
+    // First-wins, not latest-wins: a malicious voter who can pin
+    // multiple VKs to one real address must not be able to mint two
+    // distinct key images by signing at different ringBlocks. See
+    // reconstructRing doc comment in shared/src/index.ts.
     const aliceV1 = '11'.repeat(32);
     const aliceV2 = '22'.repeat(32);
     const ring = reconstructRing(
       [announce(1, '5Alice', aliceV1), announce(5, '5Alice', aliceV2)],
       { proposalId: PROPOSAL },
     );
-    expect(ring).toEqual([aliceV2]);
+    expect(ring).toEqual([aliceV1]);
+  });
+
+  it('first-wins is independent of input iteration order', () => {
+    const aliceV1 = '11'.repeat(32);
+    const aliceV2 = '22'.repeat(32);
+    const ring = reconstructRing(
+      // Same announces, reversed order in the input array.
+      [announce(5, '5Alice', aliceV2), announce(1, '5Alice', aliceV1)],
+      { proposalId: PROPOSAL },
+    );
+    expect(ring).toEqual([aliceV1]);
   });
 
   it('filters out announces for other proposals', () => {
