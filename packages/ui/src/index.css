@@ -81,9 +81,13 @@ body {
   gap: 8px;
 }
 .logo-mark {
-  font-size: 20px;
-  color: var(--accent2);
-  line-height: 1;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  display: block;
+  border: 1px solid white;
+  border: 1px solid var(--text2);
+  border-radius: 15%;
 }
 .logo-text {
   font-size: 17px;

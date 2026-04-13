@@ -57,7 +57,7 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-left">
           <div className="logo">
-            <span className="logo-mark">◈</span>
+            <img src="/favicon.png" alt="" className="logo-mark" />
             <span className="logo-text">τaoVoter</span>
           </div>
           <span className="proposal-chip">{PROPOSAL.id}</span>
