@@ -53,9 +53,13 @@ export interface ProposalConfig {
 export const PROPOSAL: ProposalConfig = {
   id: 'proposal-1',
   title: 'Release to Mainnet (Week of Apr 13)',
-  description: `Features to be releases: <br>
-                   1. Lock cost based Liquidity Injection on New Subnet Registration. <br>
-                   2. Auto Child hotkeys`,
+  description: `Features to be released: <br>
+                - Child hotkeying allowed without cooldown until \`start_call\` on newly registered subnets <br>
+                - Yuma3 enabled by default for newly registered subnets <br>
+                - Subnet owner hotkey always eligible as validator (no alpha threshold required) <br>
+                - Alpha fees re-enabled (auto-pulls from alpha balance when TAO is insufficient for staking tx) <br>
+                - Auto childhotkeying root validators to subnet owner on new subnet registration, with per-validator opt-out (default is still opt-in) <br>
+                - Lock-cost-based liquidity injection: lock cost converted to alpha using median price of bottom 50% of subnets. 1/2 lock cost to TAO side of pool, 1/4 alpha-converted value to alpha side of pool, 1/4 to subnet owner as alpha stake`,
   allowedVoters: [
     '5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp',
     '5D4gEn5S422dTGR5NJJKZ93FNV6hDmfwDPfxFNgcoVnUkZ4f',
