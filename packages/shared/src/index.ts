@@ -349,7 +349,23 @@ export function dripMessageHex(
  *     enforced via the optional `allowedRealAddresses` set; we keep
  *     the function pure and leave that check at the call site.
  *   - If a real voter announces multiple keys (e.g. regenerated
- *     after closing a tab), the LATEST announce wins.
+ *     after closing a tab), the EARLIEST announce wins. Later
+ *     announces from the same real address are silently ignored.
+ *     This is load-bearing for soundness: a latest-wins rule lets
+ *     a malicious voter publish VK1 and VK2 from the same real
+ *     account, then sign two votes — one at `rb < block(VK2)`
+ *     (where VK1 is canonical) and one at `rb ≥ block(VK2)`
+ *     (where VK2 is canonical). Key images derived from different
+ *     secret keys differ, so naive dedup by key image fails and
+ *     the same voter gets two counted ballots. First-wins pins
+ *     each real address to a single VK across every possible `rb`,
+ *     which collapses back to one key image per voter.
+ *     Operational cost: a voter who loses their VKsk cannot
+ *     re-register for the same proposal. The UI tells them
+ *     registration is permanent.
+ *   - For same-block ties (multiple announces from the same signer
+ *     in the same block), we break ties on `vkPub` lex order so the
+ *     result is independent of input iteration order.
  *   - The result is sorted lexicographically by hex public key. That
  *     is the canonical order every observer must produce, otherwise
  *     BLSAG verification fails — the ring is part of the key-prefix
@@ -363,8 +379,10 @@ export function reconstructRing(
   remarks: RemarkLike[],
   opts: { proposalId: string; allowedRealAddresses?: ReadonlySet<string> },
 ): string[] {
-  // realAddress -> { vkPub, blockNumber }
-  const latestByVoter = new Map<
+  // realAddress -> { vkPub, blockNumber } — the earliest announce
+  // seen for this voter. See the doc comment above for why this is
+  // first-wins and not latest-wins.
+  const firstByVoter = new Map<
     string,
     { vkPub: string; blockNumber: number }
   >();
@@ -379,9 +397,13 @@ export function reconstructRing(
     ) {
       continue;
     }
-    const prev = latestByVoter.get(r.signer);
-    if (!prev || r.blockNumber > prev.blockNumber) {
-      latestByVoter.set(r.signer, {
+    const prev = firstByVoter.get(r.signer);
+    if (
+      !prev ||
+      r.blockNumber < prev.blockNumber ||
+      (r.blockNumber === prev.blockNumber && parsed.vkPub < prev.vkPub)
+    ) {
+      firstByVoter.set(r.signer, {
         vkPub: parsed.vkPub,
         blockNumber: r.blockNumber,
       });
@@ -393,7 +415,7 @@ export function reconstructRing(
   // should contain each key at most once.
   const seenPub = new Set<string>();
   const ring: string[] = [];
-  for (const { vkPub } of latestByVoter.values()) {
+  for (const { vkPub } of firstByVoter.values()) {
     if (seenPub.has(vkPub)) continue;
     seenPub.add(vkPub);
     ring.push(vkPub);

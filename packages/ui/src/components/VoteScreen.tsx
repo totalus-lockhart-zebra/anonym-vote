@@ -487,6 +487,15 @@ export default function VoteScreen({
                 <strong>not</strong> in this transaction — only your VK.
               </span>
             </div>
+            <div className="vs-tlock-note">
+              <span className="vs-tlock-icon">⚠︎</span>
+              <span>
+                Registration is <strong>permanent</strong> for this proposal.
+                Your voting key is stored in this browser's local storage — if
+                you clear site data or switch browsers before voting, you will
+                not be able to re-register with a new key.
+              </span>
+            </div>
           </>
         )}
 

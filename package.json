@@ -19,7 +19,8 @@
     "build": "npm run shared:build && npm run api:build && npm run ui:build",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run shared:build && npm run test --workspaces --if-present",
-    "dev": "npm run shared:build && concurrently \"npm run api:dev\" \"npm run ui:dev\""
+    "dev": "npm run shared:build && concurrently \"npm run api:dev\" \"npm run ui:dev\"",
+    "format": "npm run format --workspace=@anon-vote/api && npm run format --workspace=@anon-vote/ui"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
