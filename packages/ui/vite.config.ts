@@ -10,7 +10,7 @@ export default defineConfig({
   // supported currently" the moment anything reachable imports from
   // `ring-sig-wasm`.
   plugins: [react(), wasm()],
-  base: '/anonym-vote/',
+  base: '/',
   define: {
     // Required for @polkadot packages in browser
     global: 'globalThis',
