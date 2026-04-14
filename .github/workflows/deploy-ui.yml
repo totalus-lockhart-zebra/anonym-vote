@@ -66,6 +66,13 @@ jobs:
         env:
           VITE_FAUCET_URL: ${{ secrets.VITE_FAUCET_URL }}
           VITE_SUBTENSOR_WS: ${{ secrets.VITE_SUBTENSOR_WS }}
+          VITE_EXPECTED_GENESIS_HASH: ${{ secrets.VITE_EXPECTED_GENESIS_HASH }}
+          VITE_PROPOSAL_ID: ${{ secrets.VITE_PROPOSAL_ID }}
+          VITE_PROPOSAL_TITLE: ${{ secrets.VITE_PROPOSAL_TITLE }}
+          VITE_PROPOSAL_DESCRIPTION: ${{ secrets.VITE_PROPOSAL_DESCRIPTION }}
+          VITE_PROPOSAL_ALLOWED_VOTERS: ${{ secrets.VITE_PROPOSAL_ALLOWED_VOTERS }}
+          VITE_PROPOSAL_START_BLOCK: ${{ secrets.VITE_PROPOSAL_START_BLOCK }}
+          VITE_PROPOSAL_COORDINATOR: ${{ secrets.VITE_PROPOSAL_COORDINATOR }}
 
       - name: Upload production-ready build files
         uses: actions/upload-artifact@v4
