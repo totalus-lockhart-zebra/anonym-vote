@@ -1,16 +1,16 @@
 /**
- * Hardcoded proposal configuration.
+ * Proposal configuration.
  *
- * There is no backend of record — the UI is a static site that talks
- * directly to the chain. The allowlist, the start block, and the
- * announce cutoff all live here. Editing this file and rebuilding
- * the UI is how a new proposal is launched.
+ * Values come from Vite env vars (VITE_PROPOSAL_*) at BUILD TIME,
+ * with the hardcoded defaults below acting as a fallback. Vite inlines
+ * `import.meta.env.VITE_*` into the bundle during `npm run build`, so
+ * an auditor can still verify the running tally by pointing at a
+ * specific git SHA + the .env.* used at build time — the config is
+ * static once shipped, never served at runtime.
  *
- * Why not runtime env vars: the whole point of this design is "no
- * server to trust." Config served at runtime would just move the
- * trust back to whoever serves it. Making the config a git-tracked
- * file keeps everything auditable and means anyone verifying the
- * tally can point at a commit hash.
+ * To launch a new proposal: either edit the defaults here and commit,
+ * or set the env vars in your deploy pipeline and rebuild. See
+ * .env.example for the full list.
  */
 
 export interface ProposalConfig {
@@ -50,30 +50,38 @@ export interface ProposalConfig {
   readonly coordinatorAddress: string;
 }
 
+function envStr(key: string, fallback: string): string {
+  const v = import.meta.env[key] as string | undefined;
+  return v && v.trim() ? v : fallback;
+}
+
+function envCsv(key: string, fallback: readonly string[]): readonly string[] {
+  const v = import.meta.env[key] as string | undefined;
+  if (!v || !v.trim()) return fallback;
+  return v
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function envInt(key: string, fallback: number): number {
+  const v = import.meta.env[key] as string | undefined;
+  if (!v || !v.trim()) return fallback;
+  const n = Number.parseInt(v, 10);
+  if (!Number.isFinite(n)) {
+    throw new Error(`${key} must be an integer, got ${JSON.stringify(v)}`);
+  }
+  return n;
+}
+
 export const PROPOSAL: ProposalConfig = {
-  id: 'proposal-1',
-  title: 'Release to Mainnet (Week of Apr 13)',
-  description: `Features to be released: <br>
-                - Child hotkeying allowed without cooldown until \`start_call\` on newly registered subnets <br>
-                - Yuma3 enabled by default for newly registered subnets <br>
-                - Subnet owner hotkey always eligible as validator (no alpha threshold required) <br>
-                - Alpha fees re-enabled (auto-pulls from alpha balance when TAO is insufficient for staking tx) <br>
-                - Auto childhotkeying root validators to subnet owner on new subnet registration, with per-validator opt-out (default is still opt-in) <br>
-                - Lock-cost-based liquidity injection: lock cost converted to alpha using median price of bottom 50% of subnets. 1/2 lock cost to TAO side of pool, 1/4 alpha-converted value to alpha side of pool, 1/4 to subnet owner as alpha stake`,
-  allowedVoters: [
-    '5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp',
-    '5D4gEn5S422dTGR5NJJKZ93FNV6hDmfwDPfxFNgcoVnUkZ4f',
-    '5DXdHixxtCvoa6GHKs2Jgrdzc61882Ftx1zN2sYFQuwgL1S1',
-    '5Dd8gaRNdhm1YP7G1hcB1N842ecAUQmbLjCRLqH5ycaTGrWv',
-    '5FxcZraZACr4L78jWkcYe3FHdiwiAUzrKLVtsSwkvFobBKqq',
-    '5Fy3MjrdKRvUWSuJa4Yd5dmBYunzKNmXnLcvP22NfaTvhQCY',
-    '5G3wMP3g3d775hauwmAZioYFVZYnvw6eY46wkFy8hEWD5KP3',
-    '5GKH9FPPnWSUoeeTJp19wVtd84XqFW4pyK2ijV2GsFbhTrP1',
-    '5GP7c3fFazW9GXK8Up3qgu2DJBk8inu4aK9TZy3RuoSWVCMi',
-    '5Gq2gs4ft5dhhjbHabvVbAhjMCV2RgKmVJKAFCUWiirbRT21',
-    '5HK5tp6t2S59DywmHRWPBVJeJ86T61KjurYqeooqj8sREpeN',
-    '5HmkM6X1D3W3CuCSPuHhrbYyZNBy2aGAiZy9NczoJmtY25H7',
-  ],
-  startBlock: 7962121,
-  coordinatorAddress: '5Ff9wuYWk2r8qKutC5NKGBqEVY2rty5JXCBTXz5Tm7ndiWwQ',
+  id: envStr('VITE_PROPOSAL_ID', 'proposal-1'),
+  title: envStr('VITE_PROPOSAL_TITLE', 'Release to Mainnet (Week of Apr 13)'),
+  description: envStr('VITE_PROPOSAL_DESCRIPTION', ''),
+  allowedVoters: envCsv('VITE_PROPOSAL_ALLOWED_VOTERS', []),
+  startBlock: envInt('VITE_PROPOSAL_START_BLOCK', 7962121),
+  coordinatorAddress: envStr(
+    'VITE_PROPOSAL_COORDINATOR',
+    '5Ff9wuYWk2r8qKutC5NKGBqEVY2rty5JXCBTXz5Tm7ndiWwQ',
+  ),
 };

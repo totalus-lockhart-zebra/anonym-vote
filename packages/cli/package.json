@@ -1,0 +1,30 @@
+{
+  "name": "@anon-vote/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Auditor CLI that independently reconstructs the tally for an anon-vote proposal from on-chain remarks.",
+  "type": "commonjs",
+  "bin": {
+    "anon-vote": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "check-format": "prettier --check \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "@anon-vote/shared": "*",
+    "@polkadot/api": "^16.5.6",
+    "@polkadot/util": "^14.0.3",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.2.2"
+  }
+}

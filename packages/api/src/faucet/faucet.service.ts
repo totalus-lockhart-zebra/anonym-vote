@@ -40,6 +40,16 @@ export interface FaucetInfo {
   head: number;
   announcedVoterCount: number;
   /**
+   * Allowlisted real wallets for this proposal. Exposed so CLI and
+   * UI clients can reconstruct the canonical ring without hardcoding
+   * the list — the faucet is already the source of truth for drip
+   * verification, so it's fine for it to be the source of truth for
+   * clients too.
+   */
+  allowedVoters: string[];
+  /** Coordinator SS58 — the address authorized to open voting. */
+  coordinatorAddress: string;
+  /**
    * Approximate remaining budget in rao —
    * `fundAmountRao * (allowedVoters - drippedCount)`, floored at
    * zero. Clients can show this as transparency; the real
@@ -261,6 +271,8 @@ export class FaucetService {
       scannedThrough: this.ringIndexer.getScannedThrough(),
       head: this.ringIndexer.getHead(),
       announcedVoterCount: this.ringIndexer.getAnnouncedVoterCount(),
+      allowedVoters: [...this.config.allowedVoters],
+      coordinatorAddress: this.config.coordinatorAddress,
       remainingBudgetRao: remaining.toString(),
     };
   }
