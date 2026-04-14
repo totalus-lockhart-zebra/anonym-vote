@@ -32,6 +32,7 @@ export class FaucetConfig implements OnModuleInit {
   readonly subtensorWs: string;
   readonly faucetMnemonic: string;
   readonly allowedVoters: readonly string[];
+  readonly coordinatorAddress: string;
   readonly proposal: ProposalConfig;
   readonly fundAmountRao: bigint;
   readonly port: number;
@@ -70,6 +71,12 @@ export class FaucetConfig implements OnModuleInit {
       throw new Error('ALLOWED_VOTERS must contain at least one address');
     }
 
+    // Coordinator SS58 address — the wallet authorized to publish
+    // the start remark that opens the voting phase. Exposed on
+    // /faucet/info so clients (UI, CLI verify) don't have to
+    // hardcode it separately.
+    this.coordinatorAddress = required('COORDINATOR_ADDRESS');
+
     this.fundAmountRao = BigInt(process.env.FUND_AMOUNT_RAO ?? '200000');
 
     this.port = Number(process.env.PORT ?? 3000);
@@ -85,6 +92,7 @@ export class FaucetConfig implements OnModuleInit {
     this.logger.log(`Proposal id:              ${this.proposal.id}`);
     this.logger.log(`Start block:              ${this.proposal.startBlock}`);
     this.logger.log(`Allowed voters:           ${this.allowedVoters.length}`);
+    this.logger.log(`Coordinator address:      ${this.coordinatorAddress}`);
     this.logger.log(`Fund amount:              ${this.fundAmountRao} rao`);
     this.logger.log(`CORS origins:             ${this.corsOrigins.join(', ')}`);
   }

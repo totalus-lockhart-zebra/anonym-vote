@@ -1,12 +1,18 @@
 /**
  * `anon-vote verify` — independent auditor tally.
  *
- * Everything needed to reproduce a proposal's result is passed via
- * flags: RPC endpoint, genesis pin, proposal id, allowlist, coordinator
- * address, block window. The command scans the chain, feeds remarks
- * through `tallyRemarks` (the same function the UI uses), prints the
- * result, and emits a deterministic hash over the outcome so two
- * independent runs can be compared with a single string compare.
+ * Minimum input is the RPC endpoint, the pinned genesis, and the
+ * faucet URL. Proposal id, start block, allowlist, and coordinator
+ * address are all pulled from `/faucet/info` so there's one source
+ * of truth and the caller can't accidentally verify against a
+ * different snapshot than the faucet itself uses. Each of those
+ * four can still be overridden explicitly — useful for replaying
+ * a historical tally or auditing against a hypothetical config.
+ *
+ * The command scans the chain, feeds remarks through `tallyRemarks`
+ * (the same function the UI uses), prints the result, and emits a
+ * deterministic hash over the outcome so two independent runs can
+ * be compared with a single string compare.
  */
 
 import { createHash } from 'node:crypto';
@@ -18,16 +24,19 @@ import {
   type Tally,
 } from '@anon-vote/shared';
 import { connect, scanRemarks } from '../chain';
+import { getFaucetInfo } from '../faucet';
 import { verifyRingSig } from '../verifier';
 
 export interface VerifyArgs {
   ws: string;
   expectedGenesis: string;
-  proposal: string;
-  startBlock: number;
+  faucetUrl: string;
+  /** Overrides for values otherwise pulled from `/faucet/info`. */
+  proposal?: string;
+  startBlock?: number;
+  allowed?: string[];
+  coordinator?: string;
   toBlock?: number;
-  allowed: string[];
-  coordinator: string;
   concurrency: number;
   json: boolean;
 }
@@ -50,7 +59,21 @@ interface VerifyResult {
 }
 
 export async function runVerify(args: VerifyArgs): Promise<number> {
-  const allowedSet = new Set(args.allowed);
+  process.stderr.write(`Fetching faucet info from ${args.faucetUrl}…\n`);
+  const info = await getFaucetInfo(args.faucetUrl);
+  if (args.proposal && args.proposal !== info.proposalId) {
+    throw new Error(
+      `--proposal "${args.proposal}" disagrees with faucet ("${info.proposalId}")`,
+    );
+  }
+  const proposalId = args.proposal ?? info.proposalId;
+  const startBlock = args.startBlock ?? info.startBlock;
+  const allowed = args.allowed ?? info.allowedVoters;
+  const coordinator = args.coordinator ?? info.coordinatorAddress;
+  process.stderr.write(
+    `Faucet: proposal=${info.proposalId}  startBlock=${info.startBlock}  allowed=${info.allowedVoters.length}  coordinator=${info.coordinatorAddress}\n`,
+  );
+  const allowedSet = new Set(allowed);
 
   process.stderr.write(`Connecting to ${args.ws}…\n`);
   const chain = await connect(args.ws, args.expectedGenesis);
@@ -60,27 +83,27 @@ export async function runVerify(args: VerifyArgs): Promise<number> {
 
   try {
     const toBlock = args.toBlock ?? chain.head;
-    if (toBlock < args.startBlock) {
+    if (toBlock < startBlock) {
       throw new Error(
-        `toBlock (${toBlock}) < startBlock (${args.startBlock}); nothing to scan.`,
+        `toBlock (${toBlock}) < startBlock (${startBlock}); nothing to scan.`,
       );
     }
 
-    const span = toBlock - args.startBlock + 1;
+    const span = toBlock - startBlock + 1;
     process.stderr.write(
-      `Scanning blocks [${args.startBlock}..${toBlock}] (${span.toLocaleString()} blocks, head=${chain.head})…\n`,
+      `Scanning blocks [${startBlock}..${toBlock}] (${span.toLocaleString()} blocks, head=${chain.head})…\n`,
     );
     if (span > 100_000) {
       process.stderr.write(
         `\n[warn] Span is ${span.toLocaleString()} blocks. At ~5 blocks/s per worker\n` +
           `       (${args.concurrency} workers) this will take roughly ` +
           `${Math.round(span / args.concurrency / 5 / 60)} minutes.\n` +
-          `       If that's wrong, double-check --start-block and consider --to-block.\n\n`,
+          `       If that's wrong, consider --to-block.\n\n`,
       );
     }
     const remarks = await scanRemarks(
       chain.api,
-      args.startBlock,
+      startBlock,
       toBlock,
       {
         concurrency: args.concurrency,
@@ -99,37 +122,35 @@ export async function runVerify(args: VerifyArgs): Promise<number> {
     const { tally, votes, votingStartBlock, invalidReasons } = tallyRemarks(
       remarks,
       {
-        proposalId: args.proposal,
-        coordinatorAddress: args.coordinator,
+        proposalId,
+        coordinatorAddress: coordinator,
         allowedRealAddresses: allowedSet,
         verify: verifyRingSig,
       },
     );
 
     const ring = computeRingAt(remarks, {
-      proposalId: args.proposal,
+      proposalId,
       atBlock: toBlock,
       allowedRealAddresses: allowedSet,
     });
 
     const result: VerifyResult = {
-      proposalId: args.proposal,
+      proposalId,
       wsUrl: args.ws,
       genesisHash: chain.genesisHash,
-      startBlock: args.startBlock,
+      startBlock,
       scannedThrough: toBlock,
       head: chain.head,
-      coordinatorAddress: args.coordinator,
-      allowlistSize: args.allowed.length,
+      coordinatorAddress: coordinator,
+      allowlistSize: allowed.length,
       ring,
       votingStartBlock,
       tally,
       votes,
       invalidReasons,
       turnoutPct:
-        args.allowed.length === 0
-          ? 0
-          : (tally.totalVoted / args.allowed.length) * 100,
+        allowed.length === 0 ? 0 : (tally.totalVoted / allowed.length) * 100,
     };
 
     if (args.json) {
