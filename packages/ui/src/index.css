@@ -1968,6 +1968,30 @@ body {
   font-size: 9px;
 }
 
+/* "voted" — voter already cast their ballot but the voting phase is
+   still open for the rest. Green check on the dot (same as active's
+   palette but no pulse animation), and a meta pill that reads "In
+   progress — your vote counted". */
+.tl-stage.tl-voted .tl-dot {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: #22c55e;
+  color: #22c55e;
+}
+.tl-stage.tl-voted .tl-label {
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+}
+.tl-stage.tl-voted .tl-meta {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.tl-stage.tl-voted .tl-meta::before {
+  content: '✓';
+  font-size: 11px;
+}
+
 @keyframes tl-blink {
   0%,
   100% {

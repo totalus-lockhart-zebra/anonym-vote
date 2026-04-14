@@ -613,15 +613,15 @@ export function tallyRemarks(
     if (seenKeyImage.has(payload.sig.key_image)) continue;
     seenKeyImage.add(payload.sig.key_image);
 
-    // Aggregation rule for this project: abstain votes count toward
-    // yes. The voter still casts `abstain` on chain (it's preserved
-    // in `accepted` below, so an auditor can always recover the raw
-    // split), but the `tally` totals roll abstain into yes. We keep
-    // the `tally.abstain` bucket at zero rather than holding the raw
-    // count there — that way `yes + no + abstain === totalVoted`
-    // still holds and downstream UI doesn't have to special-case it.
-    const bucket: Choice = payload.c === 'abstain' ? 'yes' : payload.c;
-    tally[bucket]++;
+    // `tally` keeps each choice in its own bucket — this preserves
+    // raw counts so UIs can draw separate yes/no/abstain bars.
+    // Project rule: the passed/failed STATUS is computed downstream
+    // as `yes + abstain` vs `no` (abstain counts toward yes for the
+    // outcome) — but that aggregation lives at the display layer,
+    // not here. Keeping the tally raw means verifiers can audit
+    // every choice independently and outcome logic can evolve
+    // without reshaping on-chain data.
+    tally[payload.c]++;
     tally.totalVoted++;
     accepted.push({ ...payload, blockNumber: r.blockNumber });
   }

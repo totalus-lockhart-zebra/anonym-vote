@@ -669,12 +669,18 @@ export default function VoteScreen({
  * Stage activations:
  *   - announce phase    : Register active, others pending
  *   - voting phase      : Register done ✓, Coordinator done ✓, Voting active
- *   - this voter voted  : all three done ✓
+ *   - this voter voted  : Register done ✓, Coordinator done ✓, Voting
+ *                         still "in progress" (others keep voting; the
+ *                         personal "your vote was counted" state is
+ *                         shown in the screen body below, not here).
+ *                         The dot is marked as `voted` so a green
+ *                         check still shows alongside the Active label.
  */
-type StageStatus = 'active' | 'done' | 'pending';
+type StageStatus = 'active' | 'done' | 'pending' | 'voted';
 
 function stageMetaLabel(status: StageStatus): string {
   if (status === 'active') return 'In progress';
+  if (status === 'voted') return 'In progress — (voice counted)';
   if (status === 'done') return 'Completed';
   return 'Upcoming';
 }
@@ -708,14 +714,22 @@ function Timeline({
   // appears, then immediately Done.
   const stage2: StageStatus = phase.phase === 'voting' ? 'done' : 'pending';
 
-  // Stage 3 (Voting period) — active in voting phase until this
-  // particular voter has voted, then done.
+  // Stage 3 (Voting period) — remains active for the whole voting
+  // phase. When THIS voter has cast a vote we switch to 'voted' so
+  // the dot gets a checkmark and the meta label reads "In progress
+  // — your vote counted". The voting period itself doesn't "end"
+  // just because one senator has voted, so we deliberately don't
+  // mark it as 'done'.
   const stage3: StageStatus =
-    state === 'done' ? 'done' : phase.phase === 'voting' ? 'active' : 'pending';
+    phase.phase !== 'voting'
+      ? 'pending'
+      : state === 'done'
+        ? 'voted'
+        : 'active';
 
   // The lines connecting stages mirror the destination stage's
   // status: a line going INTO a stage that has been reached
-  // (done or active) is itself "done" (green).
+  // (done, voted, or active) is itself "done" (green).
   const line1Done = stage2 !== 'pending';
   const line2Done = stage3 !== 'pending';
 

@@ -86,12 +86,17 @@ export default function ResultsScreen({
     blockHashByNumber.set(r.blockNumber, r.blockHash);
   }
 
+  // Outcome rule: abstain votes count toward YES for the passed /
+  // failed decision. The `tally.abstain` bucket still holds the raw
+  // count so the distribution chart below shows the real split, but
+  // the status metric uses yes + abstain.
+  const effectiveYes = tally.yes + tally.abstain;
   let outcome: string;
   if (counted === 0) {
     outcome = 'Pending';
-  } else if (tally.yes > tally.no) {
+  } else if (effectiveYes > tally.no) {
     outcome = 'Passing ✓';
-  } else if (tally.no > tally.yes) {
+  } else if (tally.no > effectiveYes) {
     outcome = 'Failing ✗';
   } else {
     outcome = 'Tied';
