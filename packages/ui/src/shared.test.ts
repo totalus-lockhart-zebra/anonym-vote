@@ -520,8 +520,8 @@ describe('tallyRemarks (stub verify)', () => {
   const acceptAll: RingSigVerify = () => true;
   const rejectAll: RingSigVerify = () => false;
 
-  it('counts unique key images per choice', () => {
-    const { tally } = tallyRemarks(
+  it('counts unique key images per choice (abstain rolls into yes)', () => {
+    const { tally, votes } = tallyRemarks(
       [
         ...minimalSetup,
         makeVote(10, 'yes', 'aa'.repeat(32)),
@@ -535,13 +535,18 @@ describe('tallyRemarks (stub verify)', () => {
         verify: acceptAll,
       },
     );
+    // Project rule: abstain votes count toward yes in the aggregated
+    // tally, so tally.yes = raw-yes (2) + abstain (1). Raw split is
+    // still recoverable from `votes`.
     expect(tally).toEqual({
-      yes: 2,
+      yes: 3,
       no: 1,
-      abstain: 1,
+      abstain: 0,
       invalid: 0,
       totalVoted: 4,
     });
+    expect(votes.filter((v) => v.c === 'abstain')).toHaveLength(1);
+    expect(votes.filter((v) => v.c === 'yes')).toHaveLength(2);
   });
 
   it('drops second remark with same key image (first wins)', () => {
