@@ -18,7 +18,7 @@
     "ui:dev": "npm run dev --workspace=@anon-vote/ui",
     "ui:build": "npm run build --workspace=@anon-vote/ui",
     "ui:check-format": "npm run check-format --workspace=@anon-vote/ui",
-    "build": "npm run shared:build && npm run api:build && npm run ui:build",
+    "build": "npm run shared:build && npm run api:build && npm run ui:build && npm run cli:build",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run shared:build && npm run test --workspaces --if-present",
     "dev": "npm run shared:build && concurrently \"npm run api:dev\" \"npm run ui:dev\"",
