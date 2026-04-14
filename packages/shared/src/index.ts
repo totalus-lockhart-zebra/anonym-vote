@@ -613,7 +613,15 @@ export function tallyRemarks(
     if (seenKeyImage.has(payload.sig.key_image)) continue;
     seenKeyImage.add(payload.sig.key_image);
 
-    tally[payload.c]++;
+    // Aggregation rule for this project: abstain votes count toward
+    // yes. The voter still casts `abstain` on chain (it's preserved
+    // in `accepted` below, so an auditor can always recover the raw
+    // split), but the `tally` totals roll abstain into yes. We keep
+    // the `tally.abstain` bucket at zero rather than holding the raw
+    // count there — that way `yes + no + abstain === totalVoted`
+    // still holds and downstream UI doesn't have to special-case it.
+    const bucket: Choice = payload.c === 'abstain' ? 'yes' : payload.c;
+    tally[bucket]++;
     tally.totalVoted++;
     accepted.push({ ...payload, blockNumber: r.blockNumber });
   }
