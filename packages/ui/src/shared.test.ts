@@ -355,21 +355,21 @@ describe('reconstructRing', () => {
     expect(ring).toEqual([alice, bob, eve]);
   });
 
-  it('keeps the first announce per real address (soundness)', () => {
-    // First-wins, not latest-wins: a malicious voter who can pin
-    // multiple VKs to one real address must not be able to mint two
-    // distinct key images by signing at different ringBlocks. See
-    // reconstructRing doc comment in shared/src/index.ts.
+  it('keeps the latest pre-start announce per real address', () => {
+    // Latest-wins inside the announce window: a voter who loses
+    // their VK sk can re-announce and have the new VK enter the
+    // ring, as long as the coordinator hasn't opened voting yet.
+    // See reconstructRing doc comment in shared/src/index.ts.
     const aliceV1 = '11'.repeat(32);
     const aliceV2 = '22'.repeat(32);
     const ring = reconstructRing(
       [announce(1, '5Alice', aliceV1), announce(5, '5Alice', aliceV2)],
       { proposalId: PROPOSAL },
     );
-    expect(ring).toEqual([aliceV1]);
+    expect(ring).toEqual([aliceV2]);
   });
 
-  it('first-wins is independent of input iteration order', () => {
+  it('latest-wins is independent of input iteration order', () => {
     const aliceV1 = '11'.repeat(32);
     const aliceV2 = '22'.repeat(32);
     const ring = reconstructRing(
@@ -377,7 +377,50 @@ describe('reconstructRing', () => {
       [announce(5, '5Alice', aliceV2), announce(1, '5Alice', aliceV1)],
       { proposalId: PROPOSAL },
     );
+    expect(ring).toEqual([aliceV2]);
+  });
+
+  it('ignores announces at or after votingStartBlock', () => {
+    // Protocol rule: once the coordinator's start remark lands,
+    // new announces are dropped. This closes the double-vote hole
+    // that pure latest-wins would otherwise open (a voter could
+    // announce VK1, vote, announce VK2, vote again with a fresh
+    // key image). After start, each voter's VK is FROZEN.
+    const aliceV1 = '11'.repeat(32);
+    const aliceV2 = '22'.repeat(32);
+    const startBlock = 10;
+    const ring = reconstructRing(
+      [
+        announce(1, '5Alice', aliceV1), // pre-start ✓
+        announce(15, '5Alice', aliceV2), // post-start ✗
+      ],
+      { proposalId: PROPOSAL, votingStartBlock: startBlock },
+    );
     expect(ring).toEqual([aliceV1]);
+  });
+
+  it('accepts the boundary case: block === startBlock is post-start', () => {
+    // Boundary check: votingStartBlock is exclusive from below —
+    // i.e. any announce in a block >= startBlock is rejected.
+    const aliceV1 = '11'.repeat(32);
+    const ring = reconstructRing([announce(5, '5Alice', aliceV1)], {
+      proposalId: PROPOSAL,
+      votingStartBlock: 5,
+    });
+    expect(ring).toEqual([]);
+  });
+
+  it('no late-voter announces: voter with only post-start announces is absent', () => {
+    const aliceV1 = '11'.repeat(32);
+    const bob = 'bb'.repeat(32);
+    const ring = reconstructRing(
+      [
+        announce(1, '5Bob', bob), // pre-start ✓
+        announce(15, '5Alice', aliceV1), // alice announced only post-start ✗
+      ],
+      { proposalId: PROPOSAL, votingStartBlock: 10 },
+    );
+    expect(ring).toEqual([bob]);
   });
 
   it('filters out announces for other proposals', () => {
@@ -848,10 +891,16 @@ describe('end-to-end with real BLSAG', () => {
     expect(votes[0].rb).toBe(20);
   });
 
-  it('verifies two voters with different ring snapshots', () => {
-    // Alice announces, Bob announces, Alice votes (ring size 2),
-    // Eve announces, Bob votes (ring size 3). Both votes should
-    // verify because each is checked against its own ringBlock.
+  it('verifies two voters with different ring snapshots (both pre-start)', () => {
+    // Alice announces at 10, Bob at 15, Eve at 18. Coordinator
+    // opens voting at block 20. Alice signs at rb=15 (ring of 2);
+    // Bob signs at rb=18 (ring of 3). Both votes should verify
+    // because each is checked against its own pre-start ringBlock.
+    //
+    // The "growing ring across votes" property still holds WITHIN
+    // the announce window — announces after the start remark are
+    // dropped (see reconstructRing), so the ring stops growing the
+    // moment voting opens.
     const alice = realKeygen();
     const bob = realKeygen();
     const eve = realKeygen();
@@ -863,10 +912,41 @@ describe('end-to-end with real BLSAG', () => {
       text: encodeAnnounceRemark(PROPOSAL, alice.pk),
     });
     remarks.push({
-      blockNumber: 20,
+      blockNumber: 15,
       signer: '5Bob',
       text: encodeAnnounceRemark(PROPOSAL, bob.pk),
     });
+
+    // Alice signs at rb=15 → ring={Alice, Bob}.
+    const ringAt15 = computeRingAt(remarks, {
+      proposalId: PROPOSAL,
+      atBlock: 15,
+    });
+    expect(ringAt15).toHaveLength(2);
+    const aliceSig = realSign(
+      alice.sk,
+      ringAt15,
+      voteMessageHex(PROPOSAL, 'yes', 15),
+    );
+
+    // Eve announces before start.
+    remarks.push({
+      blockNumber: 18,
+      signer: '5Eve',
+      text: encodeAnnounceRemark(PROPOSAL, eve.pk),
+    });
+
+    // Bob signs at rb=18 → ring={Alice, Bob, Eve}.
+    const ringAt18 = computeRingAt(remarks, {
+      proposalId: PROPOSAL,
+      atBlock: 18,
+    });
+    expect(ringAt18).toHaveLength(3);
+    const bobSig = realSign(
+      bob.sk,
+      ringAt18,
+      voteMessageHex(PROPOSAL, 'no', 18),
+    );
 
     // Coordinator opens voting at block 20.
     remarks.push({
@@ -875,53 +955,26 @@ describe('end-to-end with real BLSAG', () => {
       text: encodeStartRemark(PROPOSAL),
     });
 
-    // Alice signs at block 20 → ring={Alice, Bob}, sorted.
-    const ringAt20 = computeRingAt(remarks, {
-      proposalId: PROPOSAL,
-      atBlock: 20,
-    });
-    expect(ringAt20).toHaveLength(2);
-    const aliceSig = realSign(
-      alice.sk,
-      ringAt20,
-      voteMessageHex(PROPOSAL, 'yes', 20),
-    );
+    // Vote remarks must be post-start to be accepted. Alice's vote
+    // at 21, Bob's at 22, both ring-signed against their
+    // respective pre-start ringBlocks above.
     remarks.push({
       blockNumber: 21,
       signer: 'gas-alice',
       text: encodeVoteRemark({
         proposalId: PROPOSAL,
         choice: 'yes',
-        ringBlock: 20,
+        ringBlock: 15,
         sig: aliceSig,
       }),
     });
-
-    // Eve announces.
     remarks.push({
-      blockNumber: 30,
-      signer: '5Eve',
-      text: encodeAnnounceRemark(PROPOSAL, eve.pk),
-    });
-
-    // Bob signs at block 30 → ring={Alice, Bob, Eve}.
-    const ringAt30 = computeRingAt(remarks, {
-      proposalId: PROPOSAL,
-      atBlock: 30,
-    });
-    expect(ringAt30).toHaveLength(3);
-    const bobSig = realSign(
-      bob.sk,
-      ringAt30,
-      voteMessageHex(PROPOSAL, 'no', 30),
-    );
-    remarks.push({
-      blockNumber: 31,
+      blockNumber: 22,
       signer: 'gas-bob',
       text: encodeVoteRemark({
         proposalId: PROPOSAL,
         choice: 'no',
-        ringBlock: 30,
+        ringBlock: 18,
         sig: bobSig,
       }),
     });
@@ -938,11 +991,10 @@ describe('end-to-end with real BLSAG', () => {
       invalid: 0,
       totalVoted: 2,
     });
-    // Alice was first → smaller ring; Bob second → larger ring.
     const aliceVote = votes.find((v) => v.c === 'yes')!;
     const bobVote = votes.find((v) => v.c === 'no')!;
-    expect(aliceVote.rb).toBe(20);
-    expect(bobVote.rb).toBe(30);
+    expect(aliceVote.rb).toBe(15);
+    expect(bobVote.rb).toBe(18);
   });
 
   it('a voter signing the same proposal twice produces one accepted vote', () => {

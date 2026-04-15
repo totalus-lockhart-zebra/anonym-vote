@@ -19,7 +19,11 @@
  */
 
 import { useMemo } from 'react';
-import { parseAnnounceRemark, reconstructRing } from '@anon-vote/shared';
+import {
+  findVotingStartBlock,
+  parseAnnounceRemark,
+  reconstructRing,
+} from '@anon-vote/shared';
 import type { IndexedRemark } from '../indexer';
 import type { ProposalConfig } from '../proposal';
 
@@ -68,25 +72,41 @@ export function useRing(
   return useMemo(() => {
     const allowedSet = new Set(config.allowedVoters);
 
+    // Voting-phase boundary. Announces at or after this block are
+    // dropped by `reconstructRing`; before it, latest-wins per
+    // signer. Returned `null` during the announce phase when no
+    // start remark has been observed yet — in that case the full
+    // latest-wins sweep across all known announces applies.
+    const votingStartBlock = findVotingStartBlock([...remarks], {
+      proposalId: config.id,
+      coordinatorAddress: config.coordinatorAddress,
+    });
+
     const ring = reconstructRing([...remarks], {
       proposalId: config.id,
       allowedRealAddresses: allowedSet,
+      votingStartBlock,
     });
 
     let myAnnouncedVk: string | null = null;
     let myAnnounceBlock: number | null = null;
-    // Earliest announce per allowlisted signer. We track the lowest
-    // block number and its hash so the Participants screen can deep-
-    // link to the exact on-chain registration.
+    // Per-signer record of the effective announce (matches
+    // `reconstructRing` semantics: latest pre-start). The
+    // Participants screen shows this as "Registered at block X".
     const announcedAt = new Map<string, AnnounceMeta>();
 
     for (const r of remarks) {
       if (!allowedSet.has(r.signer)) continue;
       const parsed = parseAnnounceRemark(r.text);
       if (!parsed || parsed.proposalId !== config.id) continue;
+      if (votingStartBlock !== null && r.blockNumber >= votingStartBlock) {
+        // Post-start announces are rejected by the protocol — don't
+        // expose them as if they were valid registrations.
+        continue;
+      }
 
       const existing = announcedAt.get(r.signer);
-      if (!existing || r.blockNumber < existing.blockNumber) {
+      if (!existing || r.blockNumber > existing.blockNumber) {
         announcedAt.set(r.signer, {
           blockNumber: r.blockNumber,
           blockHash: r.blockHash,
@@ -110,5 +130,11 @@ export function useRing(
       announcedVoterCount: announcedAt.size,
       announcedAt,
     };
-  }, [remarks, config.id, config.allowedVoters, realAddress]);
+  }, [
+    remarks,
+    config.id,
+    config.allowedVoters,
+    config.coordinatorAddress,
+    realAddress,
+  ]);
 }

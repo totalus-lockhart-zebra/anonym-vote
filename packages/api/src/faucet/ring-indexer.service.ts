@@ -10,6 +10,7 @@ import { FaucetConfig } from '../config/faucet.config';
 import { SubtensorService } from './subtensor.service';
 import {
   computeRingAt,
+  findVotingStartBlock,
   parseAnnounceRemark,
   type RemarkLike,
 } from '@anon-vote/shared';
@@ -73,13 +74,25 @@ export class RingIndexerService implements OnModuleInit, OnModuleDestroy {
    * The faucet calls this on every drip request to reconstruct the
    * exact ring the voter signed against. Returns null if the
    * indexer has not yet caught up to the requested block.
+   *
+   * Ring semantics (symmetric with the client, UI, and CLI, via the
+   * shared `reconstructRing`): within the announce window
+   * (before the coordinator's start remark) latest-wins per signer;
+   * after start remark, announces are dropped entirely. We look up
+   * the start block from our own indexed remarks so every side
+   * agrees on the boundary.
    */
   getRingAt(block: number): readonly string[] | null {
     if (block > this.scannedThrough) return null;
+    const votingStartBlock = findVotingStartBlock(this.remarks, {
+      proposalId: this.config.proposalId,
+      coordinatorAddress: this.config.coordinatorAddress,
+    });
     return computeRingAt(this.remarks, {
       proposalId: this.config.proposalId,
       atBlock: block,
       allowedRealAddresses: new Set(this.config.allowedVoters),
+      votingStartBlock,
     });
   }
 
@@ -93,14 +106,26 @@ export class RingIndexerService implements OnModuleInit, OnModuleDestroy {
     return this.headBlock;
   }
 
-  /** Number of distinct allowlist members that have announced so far. */
+  /**
+   * Number of distinct allowlist members whose latest pre-start
+   * announce is known. Matches the ring's effective membership so
+   * clients displaying "X of N registered" don't inflate the count
+   * with post-start announces that the ring would reject anyway.
+   */
   getAnnouncedVoterCount(): number {
     const allowed = new Set(this.config.allowedVoters);
+    const votingStartBlock = findVotingStartBlock(this.remarks, {
+      proposalId: this.config.proposalId,
+      coordinatorAddress: this.config.coordinatorAddress,
+    });
     const seen = new Set<string>();
     for (const r of this.remarks) {
       if (!allowed.has(r.signer)) continue;
       const parsed = parseAnnounceRemark(r.text);
       if (!parsed || parsed.proposalId !== this.config.proposalId) continue;
+      if (votingStartBlock !== null && r.blockNumber >= votingStartBlock) {
+        continue;
+      }
       seen.add(r.signer);
     }
     return seen.size;
