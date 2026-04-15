@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'packages/ui/**'
+      - 'packages/shared/**'
+      - 'packages/ring-sig/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/heroku-prebuild.sh'
+      - '.github/workflows/deploy-ui.yml'
   workflow_dispatch:
 
 concurrency:
