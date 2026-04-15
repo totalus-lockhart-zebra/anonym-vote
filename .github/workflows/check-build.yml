@@ -6,28 +6,31 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   check_build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Read Node.js version from .nvmrc
         id: nvm
         run: echo "NODE_VERSION=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ steps.nvm.outputs.NODE_VERSION }}
           cache: npm
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache Cargo deps + ring-sig target
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -39,7 +42,7 @@ jobs:
 
       - name: Install wasm-pack
         run: |
-          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          cargo install wasm-pack --version 0.14.0 --locked
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Build ring-sig wasm targets

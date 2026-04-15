@@ -157,3 +157,81 @@ shell history.
 Both files are written with 0600 perms — read access = full ability
 to cast a vote in the voter's slot (once) or drain the gas wallet.
 Back them up the same way you'd back up any other key material.
+
+## Docker
+
+A multi-stage Dockerfile builds the CLI into a slim `node:22-slim`
+image. `docker-compose.yml` defines three services: **verify**,
+**announce**, and **vote**.
+
+### Build
+
+```sh
+docker compose build verify   # builds the shared image (all services use it)
+```
+
+### Usage
+
+```sh
+# Verify — read-only tally audit
+docker compose run --rm verify
+
+# Announce — register voting key (requires wallet file)
+WALLET_PATH=/path/to/hotkey.json docker compose run --rm announce
+
+# Vote — cast a ring-signed vote (CHOICE is required)
+CHOICE=yes  WALLET_PATH=/path/to/hotkey.json docker compose run --rm vote
+CHOICE=no   WALLET_PATH=/path/to/hotkey.json docker compose run --rm vote
+```
+
+### Environment variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `WS_URL` | no | `wss://archive-rocksdb.internal.tao.com` | Subtensor WebSocket RPC (must be an archive node) |
+| `EXPECTED_GENESIS` | no | `0x2f0555cc…` (Finney) | Pinned genesis hash — CLI refuses to run on a different chain |
+| `PROPOSAL_ID` | no | `proposal-1` | Proposal identifier |
+| `FAUCET_URL` | no | `https://api-vote.tao.com` | Faucet base URL (source of truth for allowlist, coordinator, startBlock) |
+| `WALLET_PATH` | **yes** (announce, vote) | — | Host path to a wallet keystore JSON file (mounted read-only at `/wallet`) |
+| `CHOICE` | **yes** (vote) | — | `yes`, `no`, or `abstain`. No default — prevents accidental votes |
+
+### Volume: `keys`
+
+The `announce` and `vote` services share a named Docker volume
+(`keys`) mounted at `/home/anon/.anon-vote`. This volume holds:
+
+- `<proposalId>/<address>.voting-key.json` — BLSAG secret key + public
+  key. **Plaintext.** Anyone with read access can forge a vote in
+  this voter's slot.
+- `<proposalId>/<address>.gas-wallet.json` — sr25519 mnemonic for the
+  one-shot gas wallet. **Plaintext.** Anyone with read access can
+  drain the gas balance.
+
+The volume persists across container runs so `announce` and `vote`
+can be invoked separately. To wipe secrets after voting:
+
+```sh
+docker volume rm anonym-vote_keys
+```
+
+### Security hardening
+
+The compose file applies:
+- `read_only: true` (verify service)
+- `cap_drop: ALL` — no Linux capabilities
+- `no-new-privileges` — no setuid escalation
+- `tmpfs /tmp` with `noexec,nosuid`
+- Memory limit 512 MB, CPU limit 1 core
+- Wallet file mounted `:ro` (read-only)
+- Non-root user (`anon:1001`)
+
+### WALLET_PATH format
+
+`WALLET_PATH` must point to a **file**, not a directory. Accepted
+formats:
+
+1. **Polkadot-JS keystore** (encrypted JSON) — set `JSON_PASSWORD`
+   env var or pass `--password` after `--`.
+2. **SDK key export** (plain JSON with a `secretPhrase` field) — no
+   password needed. This is the format produced by `btcli`,
+   `subkey inspect --json`, and `py-substrate-interface`.

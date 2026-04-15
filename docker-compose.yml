@@ -1,0 +1,111 @@
+# ─── anon-vote CLI ────────────────────────────────────────────────
+#
+# Verify (read-only, one-shot tally audit):
+#   docker compose run --rm verify
+#
+# Announce (register voting key on chain):
+#   docker compose run --rm announce
+#
+# Vote (cast a ring-signed vote):
+#   CHOICE=yes  docker compose run --rm vote
+#   CHOICE=no   docker compose run --rm vote
+#
+# Override defaults via env vars:
+#   WS_URL=wss://other-rpc PROPOSAL_ID=proposal-2 docker compose run --rm verify
+#
+# CHOICE is required for the vote service (no default — prevents accidental votes).
+
+x-common: &common
+  build:
+    context: .
+  network_mode: host
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  tmpfs:
+    - /tmp:noexec,nosuid,size=64m
+  deploy:
+    resources:
+      limits:
+        memory: 512m
+        cpus: "1.0"
+
+services:
+  # ── verify ───────────────────────────────────────────────────────
+  # Scan chain, reconstruct ring, verify every ring signature, print tally.
+  #
+  #   docker compose run --rm verify
+  #   docker compose run --rm verify --json          # machine-readable
+  #   docker compose run --rm verify --to-block 8000000
+  verify:
+    <<: *common
+    command:
+      - verify
+      - --ws
+      - ${WS_URL:-wss://archive-rocksdb.internal.tao.com}
+      - --expected-genesis
+      - ${EXPECTED_GENESIS:-0x2f0555cc76fc2840a25a6ea3b9637146806f1f44b090c175ffde2a7e5ab36c03}
+      - --proposal
+      - ${PROPOSAL_ID:-proposal-1}
+      - --faucet-url
+      - ${FAUCET_URL:-https://api-vote.tao.com}
+
+  # ── announce ─────────────────────────────────────────────────────
+  # Generate a voting key and publish the announce remark.
+  # Requires a wallet keystore JSON mounted at /wallet.
+  #
+  #   docker compose run --rm announce
+  #
+  # The keystore mount (WALLET_PATH) must point at a Polkadot-JS JSON
+  # export or a plain SDK export with a secretPhrase field.
+  # Voting keys persist in the keys volume across runs.
+  announce:
+    <<: *common
+    read_only: false
+    volumes:
+      - ${WALLET_PATH:-./wallet.json}:/wallet:ro
+      - keys:/home/anon/.anon-vote
+    command:
+      - announce
+      - --ws
+      - ${WS_URL:-wss://archive-rocksdb.internal.tao.com}
+      - --expected-genesis
+      - ${EXPECTED_GENESIS:-0x2f0555cc76fc2840a25a6ea3b9637146806f1f44b090c175ffde2a7e5ab36c03}
+      - --proposal
+      - ${PROPOSAL_ID:-proposal-1}
+      - --json-file
+      - /wallet
+      - --key-dir
+      - /home/anon/.anon-vote
+
+  # ── vote ─────────────────────────────────────────────────────────
+  # Cast a ring-signed vote. Must have announced first.
+  # CHOICE must be yes, no, or abstain.
+  #
+  #   CHOICE=yes docker compose run --rm vote
+  #   CHOICE=no  docker compose run --rm vote
+  vote:
+    <<: *common
+    read_only: false
+    volumes:
+      - ${WALLET_PATH:-./wallet.json}:/wallet:ro
+      - keys:/home/anon/.anon-vote
+    command:
+      - vote
+      - --ws
+      - ${WS_URL:-wss://archive-rocksdb.internal.tao.com}
+      - --expected-genesis
+      - ${EXPECTED_GENESIS:-0x2f0555cc76fc2840a25a6ea3b9637146806f1f44b090c175ffde2a7e5ab36c03}
+      - --faucet-url
+      - ${FAUCET_URL:-https://api-vote.tao.com}
+      - --choice
+      - ${CHOICE:?CHOICE is required (yes, no, or abstain)}
+      - --json-file
+      - /wallet
+      - --key-dir
+      - /home/anon/.anon-vote
+
+volumes:
+  keys:

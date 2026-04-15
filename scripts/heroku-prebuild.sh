@@ -44,7 +44,7 @@ echo "===> heroku-prebuild: ensuring Rust toolchain"
 if ! command -v cargo >/dev/null 2>&1; then
   echo "     installing rustup (stable, minimal profile)"
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-    | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path
+    | sh -s -- -y --default-toolchain 1.88.0 --profile minimal --no-modify-path
 fi
 
 # rustup-init writes to ~/.cargo/env but doesn't touch the current
@@ -58,8 +58,8 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 echo "===> heroku-prebuild: ensuring wasm-pack"
 if ! command -v wasm-pack >/dev/null 2>&1; then
-  echo "     installing wasm-pack (precompiled binary)"
-  curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+  echo "     installing wasm-pack 0.14.0 via cargo"
+  cargo install wasm-pack --version 0.14.0 --locked
 fi
 
 # Re-export PATH in case wasm-pack just landed in ~/.cargo/bin

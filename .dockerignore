@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.claude
+tmp
+*.md
+.env
+.env.local
+
+node_modules
+packages/*/dist
+packages/shared/dist
+packages/ring-sig/target
+packages/ring-sig/wasm/pkg
+packages/ring-sig/wasm/pkg-bundler
