@@ -62,12 +62,22 @@ const CATCHUP_THRESHOLD = 10;
  */
 const SAFETY_MARGIN = 10;
 /**
- * Minimum time the `catching-up` status is shown, in ms. If a scan
- * finishes faster than this we hold the banner until the minimum
- * elapses — otherwise the UI flashes on every delta-scan and the user
- * sees a nervous strobe rather than a status.
+ * Minimum time any non-ready banner (`indexing` or `catching-up`) is
+ * shown, in ms. Fast delta scans tend to finish in hundreds of
+ * milliseconds and without this hold the banner would strobe on and
+ * off with every head tick or force-scan. A consistent 3 s ensures
+ * the user perceives a calm "syncing" state rather than a flicker.
  */
-const MIN_CATCHUP_VISIBLE_MS = 3_000;
+const MIN_BUSY_VISIBLE_MS = 3_000;
+
+/**
+ * Any status value that we DO want to hold on screen for at least
+ * MIN_BUSY_VISIBLE_MS. `ready` is excluded — we never want to force
+ * the user to see "ready" when we're actually still catching up.
+ */
+function isBusy(s: IndexerSnapshot['status']): boolean {
+  return s === 'indexing' || s === 'catching-up';
+}
 
 export interface IndexerSnapshot {
   status: 'indexing' | 'catching-up' | 'ready';
@@ -115,13 +125,14 @@ export function useIndexer(config: ProposalConfig): IndexerSnapshot {
   const headRef = useRef<number | null>(null);
   const inFlightRef = useRef<Promise<void> | null>(null);
   const cacheHitRef = useRef<boolean>(false);
-  // Timestamp of when the current catching-up banner appeared. Null
-  // when not catching up. Used to enforce MIN_CATCHUP_VISIBLE_MS so
-  // sub-second scans don't flash the banner on and off.
-  const catchUpShownAtRef = useRef<number | null>(null);
-  const catchUpHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  // Timestamp of when a non-ready banner first appeared in the
+  // current "busy" session, and the busy status that owns it. Null
+  // when we're in `ready` and not holding anything. These drive the
+  // MIN_BUSY_VISIBLE_MS hold, keeping the banner on screen for a
+  // calm, steady duration instead of strobing once-a-scan.
+  const busyShownAtRef = useRef<number | null>(null);
+  const busyStatusRef = useRef<IndexerSnapshot['status'] | null>(null);
+  const busyHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Held by the useEffect below and reassigned on re-run. The outer
   // `forceCatchUp` exposed in the snapshot routes through this ref so
   // the returned function identity stays stable across re-renders.
@@ -208,78 +219,106 @@ export function useIndexer(config: ProposalConfig): IndexerSnapshot {
       });
     };
 
-    const updateSnapshot = (override?: {
-      status?: IndexerSnapshot['status'];
-    }): void => {
+    /**
+     * Compute the "natural" status from current refs, ignoring the
+     * minimum-visible hold. Centralized so every consumer of the
+     * hold logic agrees on the baseline.
+     */
+    const computeNaturalStatus = (): IndexerSnapshot['status'] => {
       const head = headRef.current;
       const scanned = scannedThroughRef.current;
       const lag = head === null ? Infinity : head - scanned;
       // Status rules differ by path:
       //   - Cached resume: we deliberately skip scanning when lag is
       //     under CATCHUP_THRESHOLD, so anything below that counts as
-      //     `ready` — the user should NOT see a perpetual "catching
-      //     up" banner just because head grew 4 blocks faster than we
-      //     scanned.
+      //     `ready` — the user should NOT see a "catching up" banner
+      //     just because head grew 4 blocks faster than we scanned.
       //   - Cold start (no cache): we want `ready` only when we're
       //     within READY_LAG_BLOCKS because every block is load-
       //     bearing until the initial scan is close to head.
-      const naturalStatus: IndexerSnapshot['status'] =
-        override?.status ??
-        (cacheHitRef.current
-          ? lag < CATCHUP_THRESHOLD
-            ? 'ready'
-            : 'catching-up'
-          : lag <= READY_LAG_BLOCKS
-            ? 'ready'
-            : 'indexing');
+      return cacheHitRef.current
+        ? lag < CATCHUP_THRESHOLD
+          ? 'ready'
+          : 'catching-up'
+        : lag <= READY_LAG_BLOCKS
+          ? 'ready'
+          : 'indexing';
+    };
 
-      // Minimum-visible-time for the catching-up banner. If we're
-      // entering it, stamp the start time. If we're leaving it
-      // early, either defer the transition or emit immediately if
-      // enough time has already passed. Remarks/scannedThrough in
-      // the snapshot are NOT delayed — only the status string is
-      // held back, so downstream data keeps flowing live.
-      if (naturalStatus === 'catching-up') {
-        if (catchUpShownAtRef.current === null) {
-          catchUpShownAtRef.current = performance.now();
+    /**
+     * Push the current state to React, applying the MIN_BUSY_VISIBLE_MS
+     * hold for any non-ready banner.
+     *
+     * Rules:
+     *   - Entering a busy status (indexing / catching-up) — stamp the
+     *     start time if we aren't already busy, cancel any pending
+     *     hold timer, and emit.
+     *   - Transitioning busy → ready — if the banner has been visible
+     *     less than MIN_BUSY_VISIBLE_MS, keep emitting the held busy
+     *     status and arm a timer to re-evaluate when the remainder
+     *     elapses. Otherwise emit `ready` immediately.
+     *   - Already ready — no hold concerns, emit directly.
+     *
+     * Only the status STRING is held; remarks, scannedThrough, head,
+     * and other data flow through unconditionally via the shared
+     * `emit()`.
+     */
+    const updateSnapshot = (override?: {
+      status?: IndexerSnapshot['status'];
+    }): void => {
+      const naturalStatus = override?.status ?? computeNaturalStatus();
+
+      if (isBusy(naturalStatus)) {
+        if (busyShownAtRef.current === null) {
+          busyShownAtRef.current = performance.now();
+          busyStatusRef.current = naturalStatus;
+        } else if (busyStatusRef.current !== naturalStatus) {
+          // A cold-start 'indexing' banner got replaced with a
+          // live-resume 'catching-up' banner (or vice versa). Flip
+          // the label immediately but keep the hold clock running —
+          // the banner is still visible, just labeled differently.
+          busyStatusRef.current = naturalStatus;
         }
-        if (catchUpHoldTimerRef.current !== null) {
-          clearTimeout(catchUpHoldTimerRef.current);
-          catchUpHoldTimerRef.current = null;
+        if (busyHoldTimerRef.current !== null) {
+          clearTimeout(busyHoldTimerRef.current);
+          busyHoldTimerRef.current = null;
         }
-        emit('catching-up');
+        emit(naturalStatus);
         return;
       }
 
-      if (catchUpShownAtRef.current !== null) {
-        const shownFor = performance.now() - catchUpShownAtRef.current;
-        const remaining = MIN_CATCHUP_VISIBLE_MS - shownFor;
+      // naturalStatus === 'ready'. Either honor an active hold, or
+      // clear state and emit immediately.
+      if (busyShownAtRef.current !== null) {
+        const shownFor = performance.now() - busyShownAtRef.current;
+        const remaining = MIN_BUSY_VISIBLE_MS - shownFor;
         if (remaining > 0) {
-          // Keep the banner for the remainder; the current snapshot
-          // still needs to flush remarks + scannedThrough to the UI,
-          // so emit with 'catching-up' now and schedule the flip.
-          emit('catching-up');
-          if (catchUpHoldTimerRef.current !== null) {
-            clearTimeout(catchUpHoldTimerRef.current);
+          const heldStatus = busyStatusRef.current ?? 'catching-up';
+          emit(heldStatus);
+          if (busyHoldTimerRef.current !== null) {
+            clearTimeout(busyHoldTimerRef.current);
           }
-          catchUpHoldTimerRef.current = setTimeout(() => {
-            catchUpHoldTimerRef.current = null;
-            catchUpShownAtRef.current = null;
+          busyHoldTimerRef.current = setTimeout(() => {
+            busyHoldTimerRef.current = null;
+            busyShownAtRef.current = null;
+            busyStatusRef.current = null;
             if (abort.signal.aborted) return;
-            // Re-evaluate natural status when the hold expires —
-            // head may have advanced during the hold and we might
-            // actually still be catching up.
+            // Re-evaluate; head may have advanced and we might be
+            // back in a busy state by now.
             updateSnapshot();
           }, remaining);
           return;
         }
-        catchUpShownAtRef.current = null;
+        // Hold expired in-line (shouldn't normally happen, but keep
+        // the state machine consistent).
+        busyShownAtRef.current = null;
+        busyStatusRef.current = null;
       }
-      if (catchUpHoldTimerRef.current !== null) {
-        clearTimeout(catchUpHoldTimerRef.current);
-        catchUpHoldTimerRef.current = null;
+      if (busyHoldTimerRef.current !== null) {
+        clearTimeout(busyHoldTimerRef.current);
+        busyHoldTimerRef.current = null;
       }
-      emit(naturalStatus);
+      emit('ready');
     };
 
     /**
@@ -327,15 +366,17 @@ export function useIndexer(config: ProposalConfig): IndexerSnapshot {
               collected.push(...found);
             },
             onProgress: (st) => {
+              // Only advance the internal cursor here. We deliberately
+              // do NOT call updateSnapshot in this path: mid-scan
+              // re-renders make the banner flicker / strobe since the
+              // scanner fires many times per second. The banner is
+              // painted once when the scan starts and once when it
+              // finishes; the MIN_BUSY_VISIBLE_MS hold keeps it
+              // legible regardless of scan duration.
               scannedThroughRef.current = Math.max(
                 scannedThroughRef.current,
                 st,
               );
-              // Live re-render so the progress bar actually moves
-              // during the scan instead of freezing until completion.
-              // Cheap — this fires a handful of times per scan, not
-              // per block.
-              updateSnapshot();
             },
           });
           if (abort.signal.aborted) return;
@@ -450,10 +491,12 @@ export function useIndexer(config: ProposalConfig): IndexerSnapshot {
       if (unsubHead) {
         void unsubHead.then((u) => u());
       }
-      if (catchUpHoldTimerRef.current !== null) {
-        clearTimeout(catchUpHoldTimerRef.current);
-        catchUpHoldTimerRef.current = null;
+      if (busyHoldTimerRef.current !== null) {
+        clearTimeout(busyHoldTimerRef.current);
+        busyHoldTimerRef.current = null;
       }
+      busyShownAtRef.current = null;
+      busyStatusRef.current = null;
       forceCatchUpImplRef.current = () => {};
     };
   }, [config.startBlock, config.id, forceCatchUp]);
