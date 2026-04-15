@@ -348,24 +348,28 @@ export function dripMessageHex(
  *     signature). Whether that signer is on the allowlist is
  *     enforced via the optional `allowedRealAddresses` set; we keep
  *     the function pure and leave that check at the call site.
- *   - If a real voter announces multiple keys (e.g. regenerated
- *     after closing a tab), the EARLIEST announce wins. Later
- *     announces from the same real address are silently ignored.
- *     This is load-bearing for soundness: a latest-wins rule lets
- *     a malicious voter publish VK1 and VK2 from the same real
- *     account, then sign two votes — one at `rb < block(VK2)`
- *     (where VK1 is canonical) and one at `rb ≥ block(VK2)`
- *     (where VK2 is canonical). Key images derived from different
- *     secret keys differ, so naive dedup by key image fails and
- *     the same voter gets two counted ballots. First-wins pins
- *     each real address to a single VK across every possible `rb`,
- *     which collapses back to one key image per voter.
- *     Operational cost: a voter who loses their VKsk cannot
- *     re-register for the same proposal. The UI tells them
- *     registration is permanent.
+ *   - Announces are accepted only STRICTLY BEFORE `votingStartBlock`
+ *     (when it's set). Announces at or after the coordinator's
+ *     start remark are dropped entirely — no late-voter path.
+ *     This is what makes latest-wins below safe:
+ *
+ *     * Within the announce window, a voter may re-announce as many
+ *       times as they like and the latest one wins. This lets a
+ *       voter recover from a lost VK sk as long as the coordinator
+ *       hasn't opened voting yet.
+ *     * Once voting opens, each voter's VK is FROZEN at their latest
+ *       pre-start announce. A second VK published after start won't
+ *       enter the ring, so a voter cannot mint a second key image
+ *       by re-announcing mid-vote.
+ *
+ *     If `votingStartBlock` is `null` (no start remark observed yet,
+ *     or caller doesn't know), no post-start filter applies and the
+ *     latest-wins rule runs over all announces in `remarks`.
+ *
  *   - For same-block ties (multiple announces from the same signer
  *     in the same block), we break ties on `vkPub` lex order so the
- *     result is independent of input iteration order.
+ *     result is independent of input iteration order. We keep the
+ *     LARGER vkPub to match the "latest" direction.
  *   - The result is sorted lexicographically by hex public key. That
  *     is the canonical order every observer must produce, otherwise
  *     BLSAG verification fails — the ring is part of the key-prefix
@@ -377,15 +381,26 @@ export function dripMessageHex(
  */
 export function reconstructRing(
   remarks: RemarkLike[],
-  opts: { proposalId: string; allowedRealAddresses?: ReadonlySet<string> },
+  opts: {
+    proposalId: string;
+    allowedRealAddresses?: ReadonlySet<string>;
+    /**
+     * Block of the coordinator's start remark. Announces at or after
+     * this block are rejected (no late-voter announces). Pass `null`
+     * or omit to disable the post-start filter — e.g. during the
+     * announce phase when no start remark exists yet.
+     */
+    votingStartBlock?: number | null;
+  },
 ): string[] {
-  // realAddress -> { vkPub, blockNumber } — the earliest announce
-  // seen for this voter. See the doc comment above for why this is
-  // first-wins and not latest-wins.
-  const firstByVoter = new Map<
+  // realAddress -> { vkPub, blockNumber } — the latest eligible
+  // announce seen for this voter.
+  const latestByVoter = new Map<
     string,
     { vkPub: string; blockNumber: number }
   >();
+
+  const startBlock = opts.votingStartBlock ?? null;
 
   for (const r of remarks) {
     const parsed = parseAnnounceRemark(r.text);
@@ -397,13 +412,17 @@ export function reconstructRing(
     ) {
       continue;
     }
-    const prev = firstByVoter.get(r.signer);
+    // Post-start announces are ignored — voting-window announces
+    // would let a malicious voter mint a second key image mid-vote.
+    if (startBlock !== null && r.blockNumber >= startBlock) continue;
+
+    const prev = latestByVoter.get(r.signer);
     if (
       !prev ||
-      r.blockNumber < prev.blockNumber ||
-      (r.blockNumber === prev.blockNumber && parsed.vkPub < prev.vkPub)
+      r.blockNumber > prev.blockNumber ||
+      (r.blockNumber === prev.blockNumber && parsed.vkPub > prev.vkPub)
     ) {
-      firstByVoter.set(r.signer, {
+      latestByVoter.set(r.signer, {
         vkPub: parsed.vkPub,
         blockNumber: r.blockNumber,
       });
@@ -415,7 +434,7 @@ export function reconstructRing(
   // should contain each key at most once.
   const seenPub = new Set<string>();
   const ring: string[] = [];
-  for (const { vkPub } of firstByVoter.values()) {
+  for (const { vkPub } of latestByVoter.values()) {
     if (seenPub.has(vkPub)) continue;
     seenPub.add(vkPub);
     ring.push(vkPub);
@@ -442,12 +461,20 @@ export function computeRingAt(
     proposalId: string;
     atBlock: number;
     allowedRealAddresses?: ReadonlySet<string>;
+    /**
+     * Block of the coordinator's start remark. Forwarded to
+     * `reconstructRing` which drops announces at or after this block.
+     * Pass `null` or omit during the announce phase when there's no
+     * start remark yet.
+     */
+    votingStartBlock?: number | null;
   },
 ): string[] {
   const inWindow = remarks.filter((r) => r.blockNumber <= opts.atBlock);
   return reconstructRing(inWindow, {
     proposalId: opts.proposalId,
     allowedRealAddresses: opts.allowedRealAddresses,
+    votingStartBlock: opts.votingStartBlock,
   });
 }
 
@@ -564,6 +591,12 @@ export function tallyRemarks(
       proposalId: opts.proposalId,
       atBlock: payload.rb,
       allowedRealAddresses: opts.allowedRealAddresses,
+      // Pass the voting start block so announces that landed at or
+      // after the coordinator's start remark are dropped from the
+      // ring. Together with latest-wins-before-start, this keeps
+      // "no double vote" intact even when voters re-announce during
+      // the announce window.
+      votingStartBlock,
     });
 
     // BLSAG requires ring size >= 2 to be a meaningful anonymity

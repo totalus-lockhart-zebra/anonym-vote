@@ -20,6 +20,7 @@ import {
   computeRingAt,
   dripMessageHex,
   encodeVoteRemark,
+  findVotingStartBlock,
   voteMessageHex,
   type Choice,
   type RemarkLike,
@@ -110,10 +111,17 @@ export async function runVote(args: VoteArgs): Promise<number> {
 
     const allowedSet = new Set(allowed);
     const ringBlock = chain.head;
+    // Use the same pre/post-start rule the faucet & tally apply so
+    // the ring we sign against matches what the verifier reconstructs.
+    const votingStartBlock = findVotingStartBlock(remarks, {
+      proposalId: proposalId,
+      coordinatorAddress: info.coordinatorAddress,
+    });
     const ring = computeRingAt(remarks, {
       proposalId: proposalId,
       atBlock: ringBlock,
       allowedRealAddresses: allowedSet,
+      votingStartBlock,
     });
 
     if (ring.length < 2) {

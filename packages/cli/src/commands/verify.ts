@@ -129,10 +129,15 @@ export async function runVerify(args: VerifyArgs): Promise<number> {
       },
     );
 
+    // Use the same pre/post-start rule as `tallyRemarks` so the
+    // header ring matches the rings each vote was verified against.
+    // `votingStartBlock` here is the one tallyRemarks already
+    // computed above.
     const ring = computeRingAt(remarks, {
       proposalId,
       atBlock: toBlock,
       allowedRealAddresses: allowedSet,
+      votingStartBlock,
     });
 
     const result: VerifyResult = {
