@@ -1,16 +1,21 @@
 /**
- * Global chain-sync status strip.
+ * Indexer status toast.
  *
- * Rendered once at the top of the app so every tab shows the same
- * indexer state. Three modes:
- *   - 'indexing'    → cold initial scan from startBlock, no cache.
- *                     Progress is (scannedThrough-startBlock) / total.
- *   - 'catching-up' → incremental delta scan after resuming from a
- *                     persisted snapshot. Progress is the closed delta
- *                     window alone, so the bar races to 100% fast
- *                     instead of bleeding back to a tiny fraction of
- *                     the full proposal range.
- *   - 'ready'       → hidden; zero vertical space so no layout jump.
+ * Rendered as a position-fixed panel in the bottom-right corner so it
+ * can appear / disappear without pushing page content around. The
+ * wrapper is ALWAYS mounted: we toggle a `.show` class instead of
+ * unmounting so the CSS transition can play on both entry and exit.
+ * When no banner is needed, the panel is translated off-screen and
+ * has `pointer-events: none` so it doesn't intercept clicks.
+ *
+ * Content:
+ *   - 'indexing'    → cold initial scan from startBlock.
+ *   - 'catching-up' → incremental delta scan after a cache resume.
+ *   - Indexer error → persistent error card; doesn't auto-dismiss.
+ *
+ * Data beyond the status string flows through live — but the status
+ * itself is held for at least MIN_BUSY_VISIBLE_MS (see useIndexer)
+ * so the toast doesn't strobe on fast delta scans.
  */
 
 import type { IndexerSnapshot } from '../hooks/useIndexer';
@@ -24,17 +29,15 @@ interface Props {
 export default function IndexerStatus({ indexer, config }: Props) {
   const isCatchingUp = indexer.status === 'catching-up';
   const isIndexing = indexer.status === 'indexing';
+  const hasError = Boolean(indexer.error);
+  const visible = isIndexing || isCatchingUp || hasError;
 
-  // For the cold scan, progress is measured against the full window
-  // [startBlock..head]. For a cached resume, measuring against the
-  // full window is meaningless (scannedThrough is usually already
-  // most of the way there), so we measure against the head lag
-  // instead — "how many blocks behind head are we right now".
+  // Progress semantics: cold scan is progress across the whole
+  // [startBlock..head] window; delta scan measures closeness to head
+  // so a tiny delta races to 100% fast instead of sitting at 0.01%.
   const scanProgressPct = (() => {
     if (indexer.head === null) return 0;
     if (isCatchingUp) {
-      // scannedThrough can fleetingly exceed head if the subscription
-      // lagged by a tick; clamp.
       const lag = Math.max(0, indexer.head - indexer.scannedThrough);
       const windowSize = Math.max(1, lag);
       return Math.round(((windowSize - lag) / windowSize) * 100);
@@ -52,10 +55,13 @@ export default function IndexerStatus({ indexer, config }: Props) {
     return 0;
   })();
 
-  if (!isIndexing && !isCatchingUp && !indexer.error) return null;
-
   return (
-    <>
+    <div
+      className={`indexer-toast${visible ? ' show' : ''}`}
+      role="status"
+      aria-live="polite"
+      aria-hidden={!visible}
+    >
       {(isIndexing || isCatchingUp) && (
         <div className="res-indexing">
           <div className="res-indexing-row">
@@ -87,11 +93,11 @@ export default function IndexerStatus({ indexer, config }: Props) {
         </div>
       )}
 
-      {indexer.error && (
+      {hasError && !isIndexing && !isCatchingUp && (
         <div className="vs-error">
           <p>Indexer error: {indexer.error}</p>
         </div>
       )}
-    </>
+    </div>
   );
 }
