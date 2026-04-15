@@ -123,6 +123,9 @@ body {
 .theme-toggle {
   width: 32px;
   height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1712,6 +1715,9 @@ body {
 .hiw-trigger {
   width: 22px;
   height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  flex-shrink: 0;
   border-radius: 50%;
   border: 1px solid var(--border2);
   background: var(--bg3);

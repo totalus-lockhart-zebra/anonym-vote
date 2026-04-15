@@ -230,7 +230,7 @@ export default function App() {
         )}
 
         {tab === 'coordinator' && (
-          <CoordinatorScreen wallet={wallet} phase={phase} />
+          <CoordinatorScreen wallet={wallet} phase={phase} indexer={indexer} />
         )}
       </main>
 

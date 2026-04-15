@@ -16,6 +16,7 @@ import {
   setSubtensorWs,
 } from '../config';
 import { validateWs } from '../subtensor';
+import { clearAllCaches } from '../indexer-cache';
 import type { RpcHealth } from '../hooks/useRpcHealth';
 
 interface Props {
@@ -225,6 +226,28 @@ export default function RpcSettingsModal({
               }
             >
               {validating ? 'Validating…' : 'Save & reload'}
+            </button>
+          </div>
+
+          <div className="rpc-divider" />
+
+          <div className="rpc-section-title">Indexer cache</div>
+          <p className="rpc-hint" style={{ marginTop: 0 }}>
+            The indexer persists its scanned remark list to localStorage so
+            reloads resume instantly. Clear it if you suspect the cache is stale
+            or corrupted — the next page load will re-scan from the proposal
+            start block.
+          </p>
+          <div className="rpc-actions">
+            <button
+              className="vs-btn-secondary"
+              onClick={() => {
+                clearAllCaches();
+                window.location.reload();
+              }}
+              disabled={validating}
+            >
+              Reset indexer cache &amp; reload
             </button>
           </div>
         </div>
