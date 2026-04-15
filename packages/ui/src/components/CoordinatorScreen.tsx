@@ -23,6 +23,7 @@ import { encodeStartRemark } from '@anon-vote/shared';
 import { PROPOSAL } from '../proposal';
 import { getApi } from '../subtensor';
 import type { VotingPhase } from '../hooks/useVotingPhase';
+import type { IndexerSnapshot } from '../hooks/useIndexer';
 
 type Step = 'idle' | 'signing' | 'in-block' | 'error';
 
@@ -30,11 +31,13 @@ export interface CoordinatorScreenProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   wallet: any;
   phase: VotingPhase;
+  indexer: IndexerSnapshot;
 }
 
 export default function CoordinatorScreen({
   wallet,
   phase,
+  indexer,
 }: CoordinatorScreenProps) {
   const [step, setStep] = useState<Step>('idle');
   const [errMsg, setErrMsg] = useState('');
@@ -84,6 +87,13 @@ export default function CoordinatorScreen({
 
       setPublishedBlock(blockNumber);
       setStep('in-block');
+
+      // Pull the indexer forward immediately so every open tab flips
+      // from announce → voting phase in seconds rather than waiting
+      // for CATCHUP_THRESHOLD blocks to accumulate. This is the
+      // highest-impact forceCatchUp of the three — voters are
+      // actively waiting for this state change.
+      indexer.forceCatchUp(blockNumber);
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : String(e));
       setStep('error');

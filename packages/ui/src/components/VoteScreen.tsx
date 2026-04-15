@@ -171,6 +171,11 @@ export default function VoteScreen({
         announceText,
       );
 
+      // Kick the indexer immediately so the user sees their own
+      // registration reflected in seconds instead of waiting for
+      // CATCHUP_THRESHOLD new blocks to accumulate.
+      indexer.forceCatchUp(announceBlock);
+
       setStep('waiting-for-announce');
       setStatusMsg(
         `Waiting for indexer to observe announce (block ${announceBlock})…`,
@@ -218,6 +223,10 @@ export default function VoteScreen({
           realAddress,
           announceText,
         );
+
+        // Kick the indexer so waitUntil below sees `scannedThrough`
+        // advance fast (seconds) instead of threshold-gated (minutes).
+        indexer.forceCatchUp(announceBlock);
 
         setStep('waiting-for-announce');
         setStatusMsg(
@@ -343,6 +352,11 @@ export default function VoteScreen({
 
       // Gas wallet has done its job — wipe it.
       clearGasWallet(PROPOSAL.id, realAddress);
+
+      // Pull the indexer forward immediately so the Results tab
+      // reflects this vote in seconds rather than whenever the next
+      // threshold trips.
+      indexer.forceCatchUp();
     } catch (e) {
       setErrMsg(e instanceof Error ? e.message : String(e));
       setStep('error');
